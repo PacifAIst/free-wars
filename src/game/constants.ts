@@ -219,6 +219,26 @@ export const FX_BURST_SECONDS = 0.5;
 /** Seconds an enemy stays tinted after taking a hit. */
 export const HIT_FLASH_SECONDS = 0.08;
 
+// --- Presentation (render only; no effect on the simulation) ---------------------
+
+/** D16: how far each scenery layer moves relative to the lane when the map slides. */
+export const PARALLAX_FAR = 0.35;
+export const PARALLAX_NEAR = 0.65;
+/** Grid units covered by one scenery tile. */
+export const SCENERY_FAR_GU = 18;
+export const SCENERY_NEAR_GU = 14;
+/** Lane, barrier and base line tiles repeat every this many gu. */
+export const TILE_REPEAT_GU = 4;
+/** Barrier tile: total width, and the part of it that is wall (the rest is its shadow on the lane). */
+export const BARRIER_TILE_GU = 2;
+export const BARRIER_WALL_GU = 72 / 44;
+/** Drawn size of units in gu. Larger than a cell so a crowd looks dense. */
+export const SHOOTER_DRAW_SIZE = 2.0;
+export const CLONE_DRAW_SIZE = 1.6;
+export const MINION_DRAW_SIZE = 1.45;
+/** Vertical anchor of unit sprites: the body centre, not the feet. */
+export const UNIT_ANCHOR_Y = 0.6;
+
 // --- Persistence ---------------------------------------------------------------
 
 export const STORAGE_KEY = 'free-wars:v1';
