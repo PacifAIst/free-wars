@@ -28,3 +28,45 @@ export interface SimState {
   tick: number;
   shooter: ShooterState;
 }
+
+// --- Maps (PLAN section 5) -------------------------------------------------------
+
+export type CellKind = 'empty' | 'enemy' | 'random' | 'gate';
+
+/** Decoded meaning of one grid cell. */
+export interface CellSpec {
+  readonly kind: CellKind;
+  /** Enemy type 1..8 for `enemy`; 0 otherwise. */
+  readonly type: number;
+  /** Enemy HP override (0 = use the enemy table), or the resistance of a gate. */
+  readonly hp: number;
+  /** Authored drop code P1..P8 (D9), or 0 for none. */
+  readonly drop: number;
+}
+
+export interface MapData {
+  id: string;
+  title: string;
+  name: string;
+  difficulty: number;
+  author: string;
+  description: string;
+  columns: number;
+  /** Number of grid rows. Row 0 enters the lane first. */
+  rows: number;
+  /** One token id per cell, row-major: `cells[row * columns + col]`. */
+  cells: Uint16Array;
+  /** Side table for cells with an HP override, an authored drop or a gate. */
+  overrides: CellSpec[];
+}
+
+/** A parser message. `column` is the grid column 1..44 for cells, else a character position. */
+export interface ParseIssue {
+  line: number;
+  column: number;
+  message: string;
+}
+
+export type ParseResult =
+  | { ok: true; map: MapData; warnings: ParseIssue[] }
+  | { ok: false; errors: ParseIssue[] };
