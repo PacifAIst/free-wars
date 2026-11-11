@@ -1,5 +1,6 @@
 import { formatIssue, parseMap } from '../parsers/markdownMapParser';
 import type { MapData } from '../types';
+import { getLayout } from './layout';
 
 /** Where the game gets its maps from. Tests supply their own. */
 export interface MapSource {
@@ -26,6 +27,10 @@ export const builtInMaps: MapSource = {
       throw new Error(`Map ${id}.md is invalid:\n${result.errors.map(formatIssue).join('\n')}`);
     }
     for (const warning of result.warnings) console.warn(`[free-wars] ${id}.md ${formatIssue(warning)}`);
+    const { dropped } = getLayout(result.map, 0);
+    if (dropped > 0) {
+      console.warn(`[free-wars] ${id}.md: ${dropped} enemies overlap a bigger enemy's footprint and were left out`);
+    }
     return result.map;
   },
 };

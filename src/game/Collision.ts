@@ -1,5 +1,13 @@
 import type { Enemy, Pool } from '../types';
-import { COLS, HASH_BUCKET, MAX_ENEMY_SIZE, WINDOW_ROWS } from './constants';
+import {
+  BIG_ENEMY_MIN_TYPE,
+  COLS,
+  HASH_BUCKET,
+  MAX_ENEMY_SIZE,
+  MINION_SPACING,
+  SEPARATION_STIFFNESS,
+  WINDOW_ROWS,
+} from './constants';
 
 /**
  * Uniform spatial hash over the enemies, rebuilt every tick (PLAN section 4).
@@ -79,6 +87,100 @@ export class SpatialHash {
       for (let by = y0; by <= y1; by++) {
         for (let bx = x0; bx <= x1; bx++) entries[fill[by * cols + bx]++] = i;
       }
+    }
+  }
+
+  /**
+   * Pushes overlapping enemies apart, so they never pass through each other
+   * (decision A21). Call after `build`; rebuild afterwards if exact queries
+   * are needed, because enemies move.
+   *
+   *  - Two minions are discs: they are pushed apart along the line between them.
+   *  - A minion that overlaps a big enemy is pushed out of its footprint by the
+   *    shortest way. The big enemy does not move: it ploughs through the crowd.
+   *  - Of two big enemies, the one further from `targetX` (where they are both heading)
+   *    gives way, so they queue up side by side instead of piling onto one spot.
+   *
+   * One pass per tick is enough: a dense crowd settles over a few ticks.
+   */
+  separate(enemies: Pool<Enemy>, targetX: number): void {
+    const { items } = enemies;
+    const { start, entries } = this;
+    const buckets = this.cols * this.rows;
+    const spacing = MINION_SPACING;
+    const spacing2 = spacing * spacing;
+    const reach = spacing / 2;
+
+    for (let b = 0; b < buckets; b++) {
+      const from = start[b];
+      const to = start[b + 1];
+      for (let m = from; m < to; m++) {
+        const i = entries[m];
+        const a = items[i];
+        for (let n = m + 1; n < to; n++) {
+          const j = entries[n];
+          const c = items[j];
+          // Two enemies can share several buckets. Handle the pair only in the
+          // bucket that holds the top-left corner of the area their boxes share,
+          // so a pair is never pushed twice in one pass.
+          const left = Math.max(a.x - a.w / 2, c.x - c.w / 2);
+          const top = Math.max(a.y - a.h / 2, c.y - c.h / 2);
+          if (this.by(top) * this.cols + this.bx(left) !== b) continue;
+          const aBig = a.type >= BIG_ENEMY_MIN_TYPE;
+          const cBig = c.type >= BIG_ENEMY_MIN_TYPE;
+
+          if (!aBig && !cBig) {
+            let dx = c.x - a.x;
+            let dy = c.y - a.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= spacing2) continue;
+            let d = Math.sqrt(d2);
+            if (d < 1e-6) {
+              // Exactly on top of each other: split them sideways, by index so it is deterministic.
+              dx = i < j ? 1 : -1;
+              dy = 0;
+              d = 1;
+            }
+            const push = ((spacing - d) / 2) * SEPARATION_STIFFNESS;
+            const ux = (dx / d) * push;
+            const uy = (dy / d) * push;
+            a.x -= ux;
+            a.y -= uy;
+            c.x += ux;
+            c.y += uy;
+            continue;
+          }
+
+          if (aBig && cBig) {
+            const px = (a.w + c.w) / 2 - Math.abs(c.x - a.x);
+            const py = (a.h + c.h) / 2 - Math.abs(c.y - a.y);
+            if (px <= 0 || py <= 0) continue;
+            // The one further from the target gives way, sideways or backwards, whichever is shorter.
+            const back = Math.abs(a.x - targetX) > Math.abs(c.x - targetX) ? a : c;
+            const other = back === a ? c : a;
+            if (px < py) back.x += (back.x < other.x ? -px : px) * SEPARATION_STIFFNESS;
+            else back.y -= py * SEPARATION_STIFFNESS;
+            continue;
+          }
+
+          const big = aBig ? a : c;
+          const small = aBig ? c : a;
+          const px = big.w / 2 + reach - Math.abs(small.x - big.x);
+          const py = big.h / 2 + reach - Math.abs(small.y - big.y);
+          if (px <= 0 || py <= 0) continue;
+          if (px < py) small.x += small.x < big.x ? -px : px;
+          else small.y += small.y < big.y ? -py : py;
+        }
+      }
+    }
+
+    // Keep everyone inside the lane.
+    for (let i = 0; i < enemies.high; i++) {
+      const e = items[i];
+      if (!e.active) continue;
+      const half = e.w / 2;
+      if (e.x < half) e.x = half;
+      else if (e.x > COLS - half) e.x = COLS - half;
     }
   }
 

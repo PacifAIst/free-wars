@@ -24,11 +24,6 @@ function singleFileExtras(): Plugin {
 export default defineConfig({
   base: './',
   publicDir: false,
-  resolve: {
-    alias: {
-      '@assets': here('./src/assets/inline.ts'),
-    },
-  },
   plugins: [viteSingleFile({ removeViteModuleLoader: true }), singleFileExtras()],
   build: {
     outDir: 'dist-single',

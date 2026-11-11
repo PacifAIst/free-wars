@@ -1,10 +1,12 @@
-// Generates every sprite in the game from code (PLAN section 7, decisions A1 and A2).
+// Generates the game's 2D art from code (decisions A1 and A2).
 //
 //   npm run gen:sprites
 //
-// Each sprite is written as SVG and rasterised with resvg. Output:
-//   public/assets/sprites/atlas.png + atlas.json   characters, projectiles, icons, effects
-//   public/assets/sprites/{lane,barrier,scenery_far,scenery_near,baseline}.png   repeating tiles
+// The game itself is drawn in 3D from the models in src/render/models.ts
+// (decision A20). This script keeps producing the 2D sheet used for user
+// interface art: powerup icons, character portraits and the favicon.
+//
+//   art/ui/atlas.png + atlas.json   icons and portraits, not shipped until the UI uses them
 //   public/favicon.ico
 //
 // The art is original: casual mobile-game style with chunky outlines, soft
@@ -16,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT_DIR = join(ROOT, 'public', 'assets', 'sprites');
+const OUT_DIR = join(ROOT, 'art', 'ui');
 
 // --- Small SVG helpers ---------------------------------------------------------
 
@@ -844,10 +846,7 @@ function main() {
     report.push(`${file.replace(ROOT, '.').replaceAll('\\', '/')}  ${(data.length / 1024).toFixed(1)} KB`);
   };
 
-  for (const [name, sprites, width] of [
-    ['atlas', CORE_SPRITES, 1024],
-    ['bosses', BOSS_SPRITES, 1024],
-  ]) {
+  for (const [name, sprites, width] of [['atlas', [...CORE_SPRITES, ...BOSS_SPRITES], 2048]]) {
     const atlas = packAtlas(sprites, width);
     write(join(OUT_DIR, `${name}.png`), rasterise(atlas.width, atlas.height, atlas.body));
     const json = {
@@ -856,11 +855,6 @@ function main() {
     };
     write(join(OUT_DIR, `${name}.json`), Buffer.from(`${JSON.stringify(json, null, 1)}
 `));
-  }
-
-  for (const [name, make, outWidth] of TILES) {
-    const t = make();
-    write(join(OUT_DIR, `${name}.png`), rasterise(t.w, t.h, t.body, outWidth));
   }
 
   const favicon = rasterise(48, 48, `<svg x="0" y="0" width="48" height="48" viewBox="0 0 100 100">${catBlack()}</svg>`);

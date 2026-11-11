@@ -44,11 +44,11 @@ class FakeView implements GameView {
   }
 }
 
-/** Enemies far from the shooter's column, so the level stays in progress. */
-const QUIET_MAP = mapFromRows(Array.from({ length: 200 }, () => rowWith({ 0: 'E1' })), '1');
+/** One enemy far up the lane and far from the swarm: the level stays in progress for many seconds. */
+const QUIET_MAP = mapFromRows([...Array.from({ length: 199 }, () => ''), rowWith({ 0: 'E1' })], '1');
 /** One enemy in the line of fire: won within a couple of seconds. */
 const QUICK_WIN = mapFromRows([rowWith({ 22: 'E1' })], '1');
-/** A boss that walks to the base line: lost after about 43 seconds. */
+/** A boss hunts the swarm down and wipes it out: lost after about ten seconds. */
 const SURE_LOSS = mapFromRows([rowWith({ 0: 'E5' })], '1');
 
 function source(maps: Record<string, MapData>): MapSource & { loads: string[] } {
@@ -190,7 +190,7 @@ describe('state machine (SPEC section 4)', () => {
     let now = t;
     for (let i = 0; i < 60 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
     expect(game.state).toBe('LOSE');
-    expect(game.sim.lossReason).toBe('boss');
+    expect(game.sim.lossReason).toBe('swarm');
     input.tap = true;
     for (let i = 0; i < 5; i++) {
       game.frame((now += FRAME_MS));

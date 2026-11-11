@@ -4,7 +4,8 @@ This file records every place where the build departs from, or fills a gap in, `
 Order of authority: the owner's latest instruction, then `PLAN.md`, then `SPEC.md`.
 
 - Sections 1 and 2 are copied from `PLAN.md` sections 2 and 3. Their labels (D1, B4) are used in code comments.
-- Section 3 lists decisions taken during implementation. Each one names the constant or file that holds it.
+- Section 3 lists what the owner changed after seeing the first build. Where it conflicts with sections 1 and 2, section 3 wins.
+- Section 4 lists decisions taken during implementation. Each one names the constant or file that holds it.
 
 Every number mentioned here lives in `src/game/constants.ts`.
 
@@ -58,24 +59,38 @@ Kept as written: boss HP, SMASH and CHARGE values, rocket intervals, minigun, ta
 
 ---
 
-## 3. Implementation decisions
+## 3. Owner changes after the first build (2026-11-11)
+
+The owner compared the first build with the reference video and asked for the changes below.
+They override the plan rows named in the last column.
+
+| # | Topic | Decision | Where | Overrides |
+|---|---|---|---|---|
+| A18 | Goal, contact, speed | The goal line has no lives: the first rat to cross it loses the level. A rat that touches any cat kills it, the black shooter included; when the shooter dies a clone is promoted, and with no clone left the level is lost. Enemies march about 2.7 times faster: a minion crosses the window in 22 seconds. Powerup boxes fall at 6 gu/s so they still outrun the army. | `BASE_HP = 1`, `SPEED_SCALE = 0.2`, `POWERUP_SPEED`, `src/game/Clone.ts` | B1 value, D1 value, D12 (shooter immunity), B8 value |
+| A19 | Pursuit | Enemies go for the swarm. Big rats (E4-E8) steer sideways at the shooter. Minions run along the line towards the swarm, so the crowd closes into a wedge aimed at the cats, as in the video, and meets them instead of slipping past at the lane edges. That is what makes the goal rule in A18 fair. | `BIG_CHASE_SPEED`, `MINION_CHASE_SPEED`, `FUNNEL_*`, `src/game/Enemy.ts` | D3 (straight conveyor) for enemies |
+| A20 | 3D rendering | The game is drawn in 3D with three.js: a perspective camera behind the swarm, lit models with shadows, glowing bullets. Models are built from code, with no model or texture files. Pixi.js is removed, because it is a 2D engine and cannot draw lit 3D models. The simulation, parser and tests did not change. | `src/render/Renderer3D.ts`, `src/render/models.ts` | SPEC section 2 (Pixi), D16 (2D sprites only), PLAN sections 4 and 7 |
+| A21 | No overlapping enemies | Rats never pass through each other. In the grid, a big rat claims every cell of its footprint: minions drawn inside it are left out, and a big rat that would overlap another moves to the nearest free span of its row, or is left out if there is none. While moving, overlapping enemies are pushed apart: minions keep a cell between them, they flow round big rats, and big rats heading for the same spot queue up side by side. | `src/game/layout.ts`, `SpatialHash.separate`, `MINION_SPACING` | D10, D11 (overlap allowed) |
+| A22 | Proportions | The camera shows about 30 of the 44 columns across a portrait screen at the swarm's depth, so units have the size they have in the video. The map still slides under the swarm, so the whole lane stays reachable. Wide screens keep the same vertical framing and show more to the sides. | `VIEW_COLS`, `CAMERA_*` | D15 (44 columns fit the screen) |
+| A23 | Map label | The status bar names the map out of the 44 built-in ones ("MAP 1/44") and fills as its rows arrive. The summary of pending maps after a win, with all locked except the next, belongs to M8. | `src/game/HUD.ts` | D5 (rows spawned / total rows as text) |
+
+## 4. Implementation decisions
 
 | # | Topic | Decision | Where |
 |---|---|---|---|
-| A1 | Art style | The owner asked on 2026-11-11 for polished casual mobile-game art instead of the pixel art named in PLAN section 7. Sprites are smooth cartoon vector art: chunky outlines, soft gradients, highlights and ground shadows. The palette idea from the plan is kept (cool blues for the lane, cream and black cats, grey-brown rats, one accent colour per powerup). Nothing is taken from the reference screenshot. | `scripts/gen-sprites.mjs` |
-| A2 | Sprite pipeline | Sprites are written as SVG by code and rasterised with `@resvg/resvg-js` (dev dependency). Output is one atlas plus a few separate tiles that must repeat (lane, barrier, scenery, base line). Generated files are committed, so a normal build needs no native tooling. | `scripts/gen-sprites.mjs` |
-| A3 | No Pixi asset loader | Textures are created from `HTMLImageElement`s and the atlas JSON is imported as a module. This avoids `fetch` and workers, so the same code path runs on a host and from `file://`. | `src/render/textures.ts` |
-| A4 | Asset URLs per build | The hosting build references files in `public/` by relative URL. The single-file build imports the same files as data URIs. The choice is made by the `@assets` alias in the two Vite configs. | `src/assets/` |
-| A5 | Extra source files | SPEC section 3 lists the main files. Rendering lives in `src/render/`, and small sim helpers (`rng.ts`, `Pool.ts`, `Sim.ts`) sit beside the listed files. An ESLint rule blocks Pixi imports in sim code. | `eslint.config.js` |
-| A6 | Shooter position | The shooter sits 8 gu above the base line, not on the row above it, so six clone rings fit below it on screen. | `SHOOTER_ROWS_ABOVE_BASE` |
+| A1 | Art style | The owner asked on 2026-11-11 for polished mobile-game art instead of the pixel art named in PLAN section 7, and then for 3D models (A20). Nothing is taken from the reference screenshot or video. | `src/render/models.ts`, `scripts/gen-sprites.mjs` |
+| A2 | 2D art | `scripts/gen-sprites.mjs` still draws a 2D sheet (powerup icons, character portraits, favicon) as SVG and rasterises it with `@resvg/resvg-js`. It is user-interface art for M5 and M8 and lives in `art/ui/`, outside the shipped folder, until the UI uses it. | `scripts/gen-sprites.mjs`, `art/ui/` |
+| A3 | No asset files at runtime | Models, the lane texture, labels and the lighting environment are all generated in code at start-up. There is nothing to fetch, so one code path serves a host and `file://`. | `src/render/` |
+| A5 | Extra source files | SPEC section 3 lists the main files. Rendering lives in `src/render/`, and sim helpers (`rng.ts`, `Pool.ts`, `Sim.ts`, `Fx.ts`, `layout.ts`, `maps.ts`) sit beside the listed files. An ESLint rule blocks three.js imports in sim code. | `eslint.config.js` |
+| A6 | Shooter position | The shooter sits 8 gu above the goal line, not on the row above it, so six clone rings fit below it. | `SHOOTER_ROWS_ABOVE_BASE` |
 | A7 | Drag direction | The map follows the finger, as SPEC section 5 says, so dragging right moves the shooter left along the lane. Arrow keys and A/D move the shooter in the key's direction. | `DRAG_DIRECTION` |
 | A8 | Parser message positions | Each parser message carries a file line and a column. For grid cells the column is the grid column 1-44, which is what an Excel author needs. For other lines it is the character position. | `src/parsers/markdownMapParser.ts` |
-| A9 | Tall screens (D15) | The sim window is 44 rows on every device, so balance does not depend on screen shape. On a portrait screen the extra rows above the window are a look-ahead: enemies that have not spawned yet are drawn straight from the grid, under a dim haze, with a line marking the top of the window. They cannot be hit until they cross that line (B3). | `src/render/Renderer.ts` |
-| A10 | `ER` cells | A random minion is chosen by a hash of the run seed, the row and the column, not by the sequential PRNG. The look-ahead preview and the spawned enemy therefore always agree. | `src/game/rng.ts`, `enemyTypeAt` |
-| A11 | Draw order (D10) | Minions are drawn farthest row first. A big enemy is drawn over the minions standing inside its footprint behind its front edge, and under everything else. Where footprints overlap, a bullet hits the enemy whose front edge is nearest the base line. | `src/render/Renderer.ts`, `src/game/Collision.ts` |
+| A9 | Look-ahead | Rows that have not spawned yet are drawn beyond the top of the window, a little darker and fading into fog, straight from the grid. They cannot be hit until they cross the pale line at the top of the window (B3). The sim window is 44 rows on every device, so balance does not depend on screen shape. | `PREVIEW_ROWS`, `src/render/Renderer3D.ts` |
+| A10 | `ER` cells | A random minion is chosen by a hash of the run seed, the row and the column, not by the sequential PRNG. The look-ahead and the spawned enemy therefore always agree. | `src/game/rng.ts`, `enemyTypeAt` |
 | A12 | Enemy pool full | When a row does not fit in the enemy pool, the whole row waits. The march clock keeps running, so the row appears at the position it would have had, not late. | `src/game/World.ts` |
 | A13 | Grid rows in the file | A blank line inside the grid block is an empty row, because editors trim trailing tabs. Empty rows at the end of the grid are dropped with a warning, since they would only delay the win. Trailing empty cells past column 44 are tolerated; content past column 44 is an error. | `src/parsers/markdownMapParser.ts` |
 | A14 | Token details | Tokens are case-insensitive. `E41`-`E44` cannot take a second drop (`E42-P7` is an error). HP overrides and gate resistance must be 1 to 1,000,000. `ER` accepts the same `-<hp>` and `-P#` suffixes as other enemies. | `src/parsers/tokens.ts` |
-| A15 | Effects in the sim | Hit, kill and base-impact effects use the 512-slot particle pool inside the sim state, so a replay looks identical. Nothing in the simulation reads them back. | `src/game/Fx.ts` |
-| A16 | Until later milestones | Gate cells parse but are not spawned until M7. E4-E8 spawn with their size, HP and speed and can be shot, but their rockets, smash, charge and HP bars arrive in M6. There is no level select until M8: the game starts level 1, moves to the next numbered level after a win, and `?map=0` opens the dev map. | `src/game/World.ts`, `src/main.ts` |
-| A17 | Boss atlas | Boss sprites (E5-E8) are in a second atlas that loads in the background after the menu appears. A level waits for it before starting. This keeps the first paint small (PLAN section 6). | `src/main.ts`, `src/render/textures.ts` |
+| A15 | Effects in the sim | Hit, kill, goal, cat-death and pickup effects use the 512-slot particle pool inside the sim state, so a replay looks identical. Nothing in the simulation reads them back. | `src/game/Fx.ts` |
+| A16 | Until later milestones | Gate cells parse but are not spawned until M7. E4-E8 spawn with their size, HP, speed and pursuit and can be shot, but rockets, smash, charge and HP bars arrive in M6; until then every enemy 8x8 or larger kills cats by contact at the B7 rate. Clone boxes work; the weapon powerups (codes P5-P8) drop nothing until M5. There is no level select until M8: the game starts map 1, moves to the next numbered map after a win, and `?map=0` opens the dev map. | `src/game/Powerup.ts`, `src/game/World.ts`, `src/main.ts` |
+| A24 | Clones | Clones are identical, so the swarm state is just their number: clone i stands in formation slot i, and when one dies the outermost slot empties (the re-pack of SPEC 6.2). A box is picked up 0.8 gu outside the outermost ring (B9). | `src/game/Clone.ts`, `PICKUP_MARGIN` |
+| A25 | Crowd materials | Cats and big rats use physically based materials with environment lighting. The rat crowd, drawn by the thousand, uses the cheaper Lambert model, with soft shading baked into the vertex colours. Minions and cats cast disc contact shadows; only big rats, the shooter and the walls cast real shadows. | `src/render/Renderer3D.ts`, `shade()` in `models.ts` |
+| A26 | HUD in HTML | The status bar and banners are plain HTML over the canvas and ignore pointer events. | `src/game/HUD.ts`, `index.html` |

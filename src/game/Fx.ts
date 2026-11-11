@@ -1,5 +1,5 @@
 import type { Fx, SimState } from '../types';
-import { FX_BURST_SECONDS, FX_PUFF_SECONDS, HIT_FLASH_SECONDS, SIM_DT } from './constants';
+import { FX_BURST_SECONDS, FX_PICKUP_SECONDS, FX_PUFF_SECONDS, HIT_FLASH_SECONDS, SIM_DT } from './constants';
 import { poolAlloc, poolFree } from './Pool';
 
 // Effect kinds. Effects are cosmetic: nothing in the simulation reads them back.
@@ -7,10 +7,20 @@ import { poolAlloc, poolFree } from './Pool';
 export const FX_HIT = 0;
 /** An enemy died. */
 export const FX_KILL = 1;
-/** An enemy reached the base line. */
+/** An enemy reached the goal line. */
 export const FX_BASE = 2;
+/** A cat was killed by contact. */
+export const FX_CAT = 3;
+/** A clone box was picked up. `size` is the number of clones it gave. */
+export const FX_PICKUP = 4;
 
-const LIFE: readonly number[] = [HIT_FLASH_SECONDS * 2, FX_PUFF_SECONDS, FX_BURST_SECONDS];
+const LIFE: readonly number[] = [
+  HIT_FLASH_SECONDS * 2,
+  FX_PUFF_SECONDS,
+  FX_BURST_SECONDS,
+  FX_PUFF_SECONDS,
+  FX_PICKUP_SECONDS,
+];
 
 export function makeFx(): Fx {
   return { active: false, kind: 0, x: 0, y: 0, age: 0, life: 0, size: 0 };

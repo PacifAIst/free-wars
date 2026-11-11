@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#12142b" />
+    <meta name="theme-color" content="#0d1029" />
     <meta name="description" content="FREE-WARS: hold the lane with your cat swarm against a marching rat army." />
     <title>FREE-WARS</title>
     <link rel="icon" href="./favicon.ico" />
@@ -17,7 +17,7 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #12142b;
+        background: #0d1029;
         overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
@@ -31,6 +31,114 @@
       }
       #game canvas {
         display: block;
+      }
+
+      /* HUD: plain HTML over the canvas. It never takes pointer events. */
+      .hud {
+        --hud-scale: 1;
+        --ink: #1b1736;
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        color: #fff;
+        font-family: 'Arial Rounded MT Bold', 'Baloo 2', 'Fredoka', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+        font-weight: 900;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+          env(safe-area-inset-left);
+      }
+      .hud-status {
+        display: none;
+        gap: 8px;
+        justify-content: center;
+        align-items: center;
+        margin: 10px 10px 0;
+      }
+      .hud-pill,
+      .hud-bar {
+        height: 26px;
+        border-radius: 13px;
+        background: rgba(27, 23, 54, 0.82);
+        border: 3px solid var(--ink);
+        font-size: 14px;
+        line-height: 26px;
+        text-shadow:
+          0 2px 0 var(--ink),
+          0 0 3px var(--ink);
+        white-space: nowrap;
+      }
+      .hud-pill {
+        padding: 0 12px;
+        background: #2f8bff;
+      }
+      .hud-bar {
+        position: relative;
+        flex: 0 1 190px;
+        overflow: hidden;
+      }
+      .hud-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        border-radius: 10px;
+      }
+      .hud-fill-base {
+        background: linear-gradient(#9af0a2, #4fcf66);
+      }
+      .hud-fill-wave {
+        background: linear-gradient(#7fdcff, #33b4ea);
+      }
+      .hud-bar-label {
+        position: absolute;
+        inset: 0;
+        text-align: center;
+      }
+      .hud-level {
+        position: absolute;
+        top: 22%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: calc(30px * var(--hud-scale));
+        opacity: 0;
+        transition: opacity 0.6s;
+        -webkit-text-stroke: 2px var(--ink);
+        paint-order: stroke fill;
+        text-shadow: 0 3px 0 var(--ink);
+      }
+      .hud-banner {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: calc(14px * var(--hud-scale));
+        padding-bottom: 12%;
+        background: rgba(11, 10, 31, 0.5);
+        text-align: center;
+      }
+      .hud-title {
+        font-size: calc(78px * var(--hud-scale));
+        letter-spacing: 2px;
+        color: #ffd166;
+        -webkit-text-stroke: calc(7px * var(--hud-scale)) var(--ink);
+        paint-order: stroke fill;
+        text-shadow: 0 calc(7px * var(--hud-scale)) 0 rgba(11, 10, 31, 0.6);
+      }
+      .hud-title:empty {
+        display: none;
+      }
+      .hud-subtitle {
+        font-size: calc(28px * var(--hud-scale));
+        white-space: pre-line;
+        -webkit-text-stroke: calc(5px * var(--hud-scale)) var(--ink);
+        paint-order: stroke fill;
+        animation: hud-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes hud-pulse {
+        50% {
+          opacity: 0.55;
+        }
       }
     </style>
   </head>

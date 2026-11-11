@@ -26,8 +26,12 @@ export const MAX_RENDER_RESOLUTION = 2;
 
 // --- D1: speeds ----------------------------------------------------------------
 
-/** Converts SPEC speed values to gu/s. Spec 10 -> 0.75 gu/s (44 rows in ~59 s). */
-export const SPEED_SCALE = 0.075;
+/**
+ * Converts SPEC speed values to gu/s. Spec 10 -> 2.0 gu/s (44 rows in 22 s).
+ * The plan started at 0.075; the owner found that far too slow next to the
+ * reference video (decision A18).
+ */
+export const SPEED_SCALE = 0.2;
 /** Speed at which the row stream advances: the E1-E3 march speed. */
 export const MARCH_SPEED_SPEC = 10;
 export const MARCH_SPEED = MARCH_SPEED_SPEC * SPEED_SCALE;
@@ -59,6 +63,32 @@ export const ENEMY_STATS: readonly EnemyStats[] = [
 ];
 
 export const ENEMY_TYPE_COUNT = 8;
+
+/**
+ * Pursuit (decision A19). Enemies go for the swarm, as in the reference video.
+ *
+ * Big enemies (E4-E8) steer straight at the shooter. Minions run along the
+ * line towards the swarm, so the crowd closes on the cats and meets them
+ * instead of slipping past at the lane edges. That is what makes the "first
+ * rat across the goal line loses" rule fair.
+ */
+export const BIG_CHASE_SPEED = 1.6;
+/** Fastest sideways speed of a minion, in gu/s. Zero makes minions hold their column. */
+export const MINION_CHASE_SPEED = 5;
+/** Enemies of this type and above count as big: they chase directly and claim their footprint in the grid. */
+export const BIG_ENEMY_MIN_TYPE = 4;
+/** Minions start to swing towards the swarm at this lane row and aim fully at it FUNNEL_END_ROWS above the shooter. */
+export const FUNNEL_START_ROW = 6;
+export const FUNNEL_END_ROWS = 5;
+
+/**
+ * Enemy collision (decision A21): enemies never pass through each other.
+ * Minions keep at least this distance between centres, a little under one
+ * cell so a packed row marches without jostling.
+ */
+export const MINION_SPACING = 0.94;
+/** Share of an overlap that is corrected each tick. Below 1 keeps a dense crowd from jittering. */
+export const SEPARATION_STIFFNESS = 0.7;
 /** `ER` picks uniformly among the first N enemy types (E1-E3). */
 export const RANDOM_MINION_TYPES = 3;
 
@@ -169,8 +199,12 @@ export const CLONE_BOX_AMOUNTS: readonly number[] = [1, 3, 10, 50];
 
 // --- Section 3: balance decisions ---------------------------------------------
 
-/** B1: base integrity. Set to 1 to restore the SPEC's instant loss. */
-export const BASE_HP = 100;
+/**
+ * B1: base integrity. 1 means the goal has no lives: the first enemy to cross
+ * it loses the level (owner's rule, decision A18). A larger value turns the
+ * goal into a health bar again.
+ */
+export const BASE_HP = 1;
 /** B2: clones at level start. */
 export const START_CLONES = 4;
 /** B4: weighted clone box, in the order +1, +3, +10, +50. */
@@ -186,10 +220,12 @@ export const DROP_WEIGHTS = {
 /** B7: enemies this size or larger are rate-limited when killing clones by contact. */
 export const BIG_CONTACT_MIN_SIZE = 8;
 export const BIG_CONTACT_RATE = 4;
-/** D12: damage an enemy takes when it trades with a clone. */
+/** D12: damage an enemy takes when it trades with a cat. */
 export const CONTACT_DAMAGE = 1;
-/** B8: powerup boxes fall at this speed. */
-export const POWERUP_SPEED = 2.0;
+/** B8: powerup boxes fall faster than the army marches, so they are not buried in it. */
+export const POWERUP_SPEED = 6.0;
+/** B9: a box is picked up this far outside the outermost clone ring. */
+export const PICKUP_MARGIN = 0.8;
 /** B11: incoming enemy HP/s stays under this fraction of achievable DPS. */
 export const PRESSURE_RATIO = 0.6;
 /** B10: built-in level length range, in rows. */
@@ -218,26 +254,30 @@ export const FX_PUFF_SECONDS = 0.35;
 export const FX_BURST_SECONDS = 0.5;
 /** Seconds an enemy stays tinted after taking a hit. */
 export const HIT_FLASH_SECONDS = 0.08;
+export const FX_PICKUP_SECONDS = 0.6;
 
 // --- Presentation (render only; no effect on the simulation) ---------------------
 
-/** D16: how far each scenery layer moves relative to the lane when the map slides. */
-export const PARALLAX_FAR = 0.35;
-export const PARALLAX_NEAR = 0.65;
-/** Grid units covered by one scenery tile. */
-export const SCENERY_FAR_GU = 18;
-export const SCENERY_NEAR_GU = 14;
-/** Lane, barrier and base line tiles repeat every this many gu. */
-export const TILE_REPEAT_GU = 4;
-/** Barrier tile: total width, and the part of it that is wall (the rest is its shadow on the lane). */
-export const BARRIER_TILE_GU = 2;
-export const BARRIER_WALL_GU = 72 / 44;
-/** Drawn size of units in gu. Larger than a cell so a crowd looks dense. */
-export const SHOOTER_DRAW_SIZE = 2.0;
-export const CLONE_DRAW_SIZE = 1.6;
-export const MINION_DRAW_SIZE = 1.45;
-/** Vertical anchor of unit sprites: the body centre, not the feet. */
-export const UNIT_ANCHOR_Y = 0.6;
+/** Columns visible across the screen at the shooter's depth on a portrait screen. */
+export const VIEW_COLS = 30;
+/** Camera rig, in gu, relative to the shooter: height above the lane and distance behind. */
+export const CAMERA_HEIGHT = 74;
+export const CAMERA_BACK = 46;
+/** The camera looks at a point this far up the lane from the shooter. */
+export const CAMERA_AHEAD = 18;
+/** Vertical field of view never drops below this (degrees), so wide screens still see the whole window. */
+export const CAMERA_MIN_FOV = 34;
+/** Units are drawn larger than a cell so the crowd overlaps and reads as a mass. */
+export const UNIT_DRAW_SCALE = 1.42;
+export const SHOOTER_DRAW_SCALE = 1.7;
+/** Big enemies are drawn a little past their footprint so they read as bulky. */
+export const BIG_DRAW_SCALE = 1.05;
+/** Big enemies are squat: their height is this fraction of their width scale. */
+export const BIG_HEIGHT_SCALE = 0.66;
+/** Rows beyond the top of the window that are drawn as a look-ahead (decision A9). */
+export const PREVIEW_ROWS = 22;
+/** Real shadow map for big enemies and walls. Minions always use contact-shadow discs. */
+export const SHADOW_MAP_SIZE = 1024;
 
 // --- Persistence ---------------------------------------------------------------
 

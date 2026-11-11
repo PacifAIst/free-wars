@@ -11,7 +11,8 @@ export function makeBullet(): Bullet {
   return { active: false, x: 0, y: 0, prevY: 0, kind: 0 };
 }
 
-function spawnBullet(sim: SimState, x: number, y: number, kind: number): void {
+/** Fires one bullet straight up from (x, y). Does nothing when the pool is full. */
+export function spawnBullet(sim: SimState, x: number, y: number, kind: number): void {
   const index = poolAlloc(sim.bullets);
   if (index < 0) return;
   const b = sim.bullets.items[index];

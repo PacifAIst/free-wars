@@ -39,6 +39,7 @@ export interface Enemy {
   /** Centre of the footprint, in gu. y grows towards the base line. */
   x: number;
   y: number;
+  prevX: number;
   prevY: number;
   w: number;
   h: number;
@@ -52,6 +53,18 @@ export interface Enemy {
   flash: number;
   /** Grid row this enemy came from. */
   row: number;
+  /** B7: seconds until a big enemy can kill another cat by contact. */
+  contact: number;
+}
+
+/** A falling powerup box. */
+export interface Powerup {
+  active: boolean;
+  /** Drop code 1..8 (D9). */
+  kind: number;
+  x: number;
+  y: number;
+  prevY: number;
 }
 
 export interface Bullet {
@@ -66,7 +79,7 @@ export interface Bullet {
 /** Cosmetic effect. Lives in the sim so replays look identical, but never affects play. */
 export interface Fx {
   active: boolean;
-  /** FX_HIT, FX_KILL or FX_BASE. */
+  /** One of the FX_* kinds in Fx.ts. */
   kind: number;
   x: number;
   y: number;
@@ -76,8 +89,11 @@ export interface Fx {
 }
 
 export type SimPhase = 'playing' | 'won' | 'lost';
-/** Why the level was lost: base integrity gone, or a boss reached the base line (B1). */
-export type LossReason = '' | 'base' | 'boss';
+/**
+ * Why the level was lost: an enemy crossed the goal (`base`), a boss crossed it
+ * (`boss`), or every cat was killed (`swarm`).
+ */
+export type LossReason = '' | 'base' | 'boss' | 'swarm';
 
 /** Player input for one sim tick, already converted to lane units. */
 export interface SimInput {
@@ -110,7 +126,12 @@ export interface SimState {
   /** True once the "enemy pool full" warning has been logged. */
   poolFullLogged: boolean;
   shooter: ShooterState;
+  /** Number of white clones around the shooter (0..CLONE_CAP). */
+  clones: number;
+  /** Seconds until each clone slot fires next. Fixed length CLONE_CAP. */
+  cloneCooldowns: number[];
   enemies: Pool<Enemy>;
+  powerups: Pool<Powerup>;
   bullets: Pool<Bullet>;
   fx: Pool<Fx>;
 }

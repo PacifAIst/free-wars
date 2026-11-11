@@ -15,14 +15,16 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
-    // PLAN section 10: sim code stays free of Pixi. Only render and UI files
-    // (src/render, HUD.ts, LevelSelect.ts, main.ts) may import it.
+    // PLAN section 10: sim code stays free of the rendering library. Only
+    // src/render may import it.
     files: ['src/game/**/*.ts', 'src/parsers/**/*.ts', 'src/types/**/*.ts'],
-    ignores: ['src/game/HUD.ts', 'src/game/LevelSelect.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [{ name: 'pixi.js', message: 'Sim code must not import Pixi (PLAN section 10).' }] },
+        {
+          paths: [{ name: 'three', message: 'Sim code must not import the renderer (PLAN section 10).' }],
+          patterns: [{ group: ['three/*'], message: 'Sim code must not import the renderer (PLAN section 10).' }],
+        },
       ],
     },
   },

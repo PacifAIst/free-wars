@@ -1,33 +1,45 @@
 import { cellSpec } from '../parsers/tokens';
 import type { MapData, SimState } from '../types';
+import { addClones } from './Clone';
 import {
   BASE_HP,
+  CLONE_CAP,
   COLS,
   MARCH_SPEED,
   POOL_BULLETS,
   POOL_ENEMIES,
   POOL_PARTICLES,
+  POOL_POWERUPS,
   PRE_ADVANCE_ROWS,
-  RANDOM_MINION_TYPES,
   SIM_DT,
+  START_CLONES,
 } from './constants';
 import { makeEnemy, spawnEnemy } from './Enemy';
 import { makeFx } from './Fx';
+import { getLayout } from './layout';
 import { createShooter } from './Player';
 import { createPool } from './Pool';
+import { makePowerup } from './Powerup';
 import { makeBullet } from './Projectile';
-import { cellHash } from './rng';
 
 export interface PoolCapacities {
   enemies: number;
   bullets: number;
   fx: number;
+  powerups: number;
+}
+
+export interface SimOptions {
+  capacities: Partial<PoolCapacities>;
+  /** B2: clones at level start. */
+  startClones: number;
 }
 
 export const DEFAULT_CAPACITIES: Readonly<PoolCapacities> = {
   enemies: POOL_ENEMIES,
   bullets: POOL_BULLETS,
   fx: POOL_PARTICLES,
+  powerups: POOL_POWERUPS,
 };
 
 /** A map with no rows: the backdrop behind the menu before a level is loaded. */
@@ -44,26 +56,12 @@ export const EMPTY_MAP: MapData = {
   overrides: [],
 };
 
-/**
- * Enemy type (1..8) that grid cell (`row`, `col`) spawns, or 0 for an empty
- * cell or a gate. `ER` is resolved from the seed, so the answer is the same
- * whenever and wherever it is asked.
- */
-export function enemyTypeAt(map: MapData, seed: number, row: number, col: number): number {
-  const spec = cellSpec(map, map.cells[row * COLS + col]);
-  if (spec.kind === 'enemy') return spec.type;
-  if (spec.kind === 'random') return 1 + (cellHash(seed, row, col) % RANDOM_MINION_TYPES);
-  return 0;
-}
-
 /** Spawns one grid row. Returns false, spawning nothing, if the enemy pool cannot hold it. */
 function spawnRow(sim: SimState, map: MapData, row: number): boolean {
+  const layout = getLayout(map, sim.seed);
   const base = row * COLS;
   let needed = 0;
-  for (let c = 0; c < COLS; c++) {
-    const kind = cellSpec(map, map.cells[base + c]).kind;
-    if (kind === 'enemy' || kind === 'random') needed++;
-  }
+  for (let c = 0; c < COLS; c++) if (layout.type[base + c] !== 0) needed++;
   if (needed > sim.enemies.freeCount) {
     if (!sim.poolFullLogged) {
       sim.poolFullLogged = true;
@@ -75,9 +73,10 @@ function spawnRow(sim: SimState, map: MapData, row: number): boolean {
   // Where this row's front edge is now: row r entered when scroll reached r.
   const frontY = sim.scroll - row;
   for (let c = 0; c < COLS; c++) {
-    const type = enemyTypeAt(map, sim.seed, row, c);
+    const type = layout.type[base + c];
     if (type === 0) continue;
-    const spec = cellSpec(map, map.cells[base + c]);
+    // HP override and drop come from the token, which may sit in another column (A21).
+    const spec = cellSpec(map, map.cells[base + layout.source[base + c]]);
     spawnEnemy(sim, type, c, row, frontY, spec.hp, spec.drop);
   }
   return true;
@@ -103,11 +102,8 @@ export function streamRows(sim: SimState, map: MapData): void {
 }
 
 /** Creates the state for a fresh run of `map`. */
-export function createWorld(
-  map: MapData,
-  seed: number,
-  capacities: Readonly<PoolCapacities> = DEFAULT_CAPACITIES,
-): SimState {
+export function createWorld(map: MapData, seed: number, options: Partial<SimOptions> = {}): SimState {
+  const capacities = { ...DEFAULT_CAPACITIES, ...options.capacities };
   const sim: SimState = {
     version: 1,
     mapId: map.id,
@@ -125,10 +121,14 @@ export function createWorld(
     shots: 0,
     poolFullLogged: false,
     shooter: createShooter(),
+    clones: 0,
+    cloneCooldowns: Array.from({ length: CLONE_CAP }, () => 0),
     enemies: createPool(capacities.enemies, makeEnemy),
+    powerups: createPool(capacities.powerups, makePowerup),
     bullets: createPool(capacities.bullets, makeBullet),
     fx: createPool(capacities.fx, makeFx),
   };
+  addClones(sim, options.startClones ?? START_CLONES);
   spawnDueRows(sim, map);
   return sim;
 }

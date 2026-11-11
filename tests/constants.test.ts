@@ -6,23 +6,26 @@ import {
   ENEMY_STATS,
   ENEMY_TYPE_COUNT,
   MARCH_SPEED,
+  POWERUP_SPEED,
   SPEED_SCALE,
   WINDOW_ROWS,
 } from '../src/game/constants';
 
 describe('constants', () => {
-  it('D1: spec speeds convert to the documented gu/s values', () => {
-    expect(10 * SPEED_SCALE).toBeCloseTo(0.75);
-    expect(8 * SPEED_SCALE).toBeCloseTo(0.6);
-    expect(5 * SPEED_SCALE).toBeCloseTo(0.375);
-    expect(20 * SPEED_SCALE).toBeCloseTo(1.5);
-    expect(50 * SPEED_SCALE).toBeCloseTo(3.75);
+  it('D1: spec speeds convert through SPEED_SCALE', () => {
+    expect(MARCH_SPEED).toBeCloseTo(10 * SPEED_SCALE);
+    expect(ENEMY_STATS[4].speedSpec * SPEED_SCALE).toBeCloseTo(MARCH_SPEED * 0.8);
+    expect(ENEMY_STATS[7].speedSpec * SPEED_SCALE).toBeCloseTo(MARCH_SPEED * 0.5);
   });
 
-  it('D1: a minion crosses the window in about a minute', () => {
+  it('A18: a minion crosses the window in 15 to 30 seconds', () => {
     const seconds = WINDOW_ROWS / MARCH_SPEED;
-    expect(seconds).toBeGreaterThan(55);
-    expect(seconds).toBeLessThan(65);
+    expect(seconds).toBeGreaterThan(15);
+    expect(seconds).toBeLessThan(30);
+  });
+
+  it('B8: boxes fall faster than the army marches', () => {
+    expect(POWERUP_SPEED).toBeGreaterThan(MARCH_SPEED);
   });
 
   it('has stats for all eight enemy types that fit the lane', () => {
