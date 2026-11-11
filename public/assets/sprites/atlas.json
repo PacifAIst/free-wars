@@ -1,0 +1,433 @@
+{
+ "frames": {
+  "tank": {
+   "frame": {
+    "x": 2,
+    "y": 2,
+    "w": 256,
+    "h": 256
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 256,
+    "h": 256
+   },
+   "sourceSize": {
+    "w": 256,
+    "h": 256
+   }
+  },
+  "rat_e4": {
+   "frame": {
+    "x": 260,
+    "y": 2,
+    "w": 192,
+    "h": 192
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 192,
+    "h": 192
+   },
+   "sourceSize": {
+    "w": 192,
+    "h": 192
+   }
+  },
+  "bubble": {
+   "frame": {
+    "x": 454,
+    "y": 2,
+    "w": 128,
+    "h": 128
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 128,
+    "h": 128
+   },
+   "sourceSize": {
+    "w": 128,
+    "h": 128
+   }
+  },
+  "icon_clone": {
+   "frame": {
+    "x": 584,
+    "y": 2,
+    "w": 96,
+    "h": 96
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 96,
+    "h": 96
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 96
+   }
+  },
+  "icon_minigun": {
+   "frame": {
+    "x": 682,
+    "y": 2,
+    "w": 96,
+    "h": 96
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 96,
+    "h": 96
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 96
+   }
+  },
+  "icon_laser": {
+   "frame": {
+    "x": 780,
+    "y": 2,
+    "w": 96,
+    "h": 96
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 96,
+    "h": 96
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 96
+   }
+  },
+  "icon_rocket": {
+   "frame": {
+    "x": 878,
+    "y": 2,
+    "w": 96,
+    "h": 96
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 96,
+    "h": 96
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 96
+   }
+  },
+  "icon_tank": {
+   "frame": {
+    "x": 2,
+    "y": 260,
+    "w": 96,
+    "h": 96
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 96,
+    "h": 96
+   },
+   "sourceSize": {
+    "w": 96,
+    "h": 96
+   }
+  },
+  "hero_ring": {
+   "frame": {
+    "x": 100,
+    "y": 260,
+    "w": 128,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 128,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 128,
+    "h": 64
+   }
+  },
+  "cat_black": {
+   "frame": {
+    "x": 230,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "cat_white": {
+   "frame": {
+    "x": 296,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "rat_e1": {
+   "frame": {
+    "x": 362,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "rat_e2": {
+   "frame": {
+    "x": 428,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "rat_e3": {
+   "frame": {
+    "x": 494,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "puff": {
+   "frame": {
+    "x": 560,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "spark": {
+   "frame": {
+    "x": 626,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "ring": {
+   "frame": {
+    "x": 692,
+    "y": 260,
+    "w": 64,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 64,
+    "h": 64
+   }
+  },
+  "rocket_player": {
+   "frame": {
+    "x": 758,
+    "y": 260,
+    "w": 28,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 28,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 28,
+    "h": 64
+   }
+  },
+  "rocket_enemy": {
+   "frame": {
+    "x": 788,
+    "y": 260,
+    "w": 28,
+    "h": 64
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 28,
+    "h": 64
+   },
+   "sourceSize": {
+    "w": 28,
+    "h": 64
+   }
+  },
+  "bullet": {
+   "frame": {
+    "x": 818,
+    "y": 260,
+    "w": 20,
+    "h": 36
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 20,
+    "h": 36
+   },
+   "sourceSize": {
+    "w": 20,
+    "h": 36
+   }
+  },
+  "bullet_minigun": {
+   "frame": {
+    "x": 840,
+    "y": 260,
+    "w": 20,
+    "h": 36
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 20,
+    "h": 36
+   },
+   "sourceSize": {
+    "w": 20,
+    "h": 36
+   }
+  }
+ },
+ "meta": {
+  "image": "atlas.png",
+  "format": "RGBA8888",
+  "size": {
+   "w": 1024,
+   "h": 358
+  },
+  "scale": 1
+ }
+}
