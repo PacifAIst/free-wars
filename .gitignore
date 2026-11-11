@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-single/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+
+# Owner's working files: kept local, never published.
+# a.png is a third-party reference screenshot (genre reference only).
+a.png
+old/
+~$*
+*.xlsx
+FREE-WARS_PLAN_v2.md

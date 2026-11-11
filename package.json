@@ -1,0 +1,37 @@
+{
+  "name": "free-wars",
+  "version": "0.1.0",
+  "description": "FREE-WARS: a fixed-shooter crowd game. A cat swarm holds the lane against a marching rat army.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "repository": "github:PacifAIst/free-wars",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --config vite.single.config.ts",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "gen:sprites": "node scripts/gen-sprites.mjs",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run build:single"
+  },
+  "dependencies": {
+    "howler": "^2.2.4",
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/howler": "^2.2.13",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.0"
+  }
+}
