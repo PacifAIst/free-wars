@@ -2,8 +2,9 @@ import { Application } from 'pixi.js';
 import { MAX_RENDER_RESOLUTION } from './game/constants';
 import { Game } from './game/Game';
 import { Input } from './game/Input';
+import { builtInMaps, type MapSource } from './game/maps';
 import { Renderer } from './render/Renderer';
-import { loadCoreTextures } from './render/textures';
+import { loadBossTextures, loadCoreTextures } from './render/textures';
 
 async function boot(): Promise<void> {
   const host = document.getElementById('game');
@@ -24,9 +25,25 @@ async function boot(): Promise<void> {
 
   const textures = await loadCoreTextures();
   const renderer = new Renderer(app, textures);
+
+  // The boss atlas is large and not needed for the menu: it loads in the
+  // background, and a level only waits for it when it starts.
+  const bossesReady = loadBossTextures().then((bosses) => renderer.setBossTextures(bosses));
+  bossesReady.catch(() => undefined);
+  const maps: MapSource = {
+    has: (id) => builtInMaps.has(id),
+    load: async (id) => {
+      const [map] = await Promise.all([builtInMaps.load(id), bossesReady]);
+      return map;
+    },
+  };
+
+  // Until the level select screen exists (M8), `?map=0` opens the dev map.
+  const levelId = new URLSearchParams(window.location.search).get('map') ?? undefined;
+
   const input = new Input();
   input.attach(app.canvas);
-  const game = new Game(renderer, input);
+  const game = new Game(renderer, input, maps, { levelId });
   game.ready();
 
   app.ticker.add(() => game.frame(performance.now()));

@@ -14,7 +14,7 @@ export const SHOOTER_MIN_X = SHOOTER_HALF_WIDTH;
 export const SHOOTER_MAX_X = COLS - SHOOTER_HALF_WIDTH;
 
 export function createShooter(): ShooterState {
-  return { x: SHOOTER_START_X, prevX: SHOOTER_START_X, v: 0, targetX: SHOOTER_START_X };
+  return { x: SHOOTER_START_X, prevX: SHOOTER_START_X, v: 0, targetX: SHOOTER_START_X, fireCooldown: 0 };
 }
 
 function clamp(value: number, min: number, max: number): number {

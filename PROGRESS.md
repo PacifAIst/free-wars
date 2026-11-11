@@ -3,59 +3,76 @@
 Status of the build against the goals in `PLAN.md` section 8. This file is the resume point:
 read it first when picking the work up again. Updated at every milestone and whenever work pauses.
 
-Last updated: 2026-11-11, after M1.
+Last updated: 2026-11-11, after M3.
 
-## Goal of the current session
+## Goal of the first session
 
 Owner's request: start development following `PLAN.md`, using the reference screenshot only for
 genre guidance, with polished casual mobile-game art (not pixel art, nothing copied).
 
-Session target: M0 through M3, so there is a playable core (cat shooting marching rats on the
-lane), plus the full sprite set brought forward from M9 because art was asked for explicitly.
+Session target, reached: M0 through M3, so there is a playable core (cat shooting marching rats
+on the lane), plus the full sprite set brought forward from M9 because art was asked for
+explicitly.
 
 ## Milestones
 
 | Milestone | State | Notes |
 |---|---|---|
-| M0 Scaffold | Done, committed (`2c73886`) | Typecheck, lint, tests and both builds pass. Single-file build opened from `file://` in headless Chrome with no console errors. Canvas resizes with the window. |
-| Art pass (from M9) | Done, committed | `scripts/gen-sprites.mjs` draws every sprite as SVG and rasterises it. Two atlases (core, bosses) plus five repeating tiles. `npm run gen:sprites -- --preview <dir>` writes review sheets. |
-| M1 Loop, map layer, input | Done, committed | State machine, fixed 60 Hz loop with interpolation, pointer and keyboard input, spring slide clamped at the barriers, lane, walls, two parallax layers, shooter pinned at centre. Checked in headless Chrome in landscape and portrait. Touch feel still needs a real phone. |
-| M2 Map parser | Not started | |
-| M3 Streaming and core combat | Not started | |
-| M4 Clones | Not started | |
+| M0 Scaffold | Done | Typecheck, lint, tests and both builds pass. Single-file build opens from `file://` with no console errors. |
+| Art pass (from M9) | Done | `scripts/gen-sprites.mjs` draws every sprite as SVG and rasterises it. Two atlases (core, bosses) plus five repeating tiles. `npm run gen:sprites -- --preview <dir>` writes review sheets. |
+| M1 Loop, map layer, input | Done | State machine, fixed 60 Hz loop with interpolation, pointer and keyboard input, spring slide clamped at the barriers, lane, walls, two parallax layers, shooter pinned at centre. Touch feel still needs a real phone. |
+| M2 Map parser | Done | `tokens.ts` and `markdownMapParser.ts`, typed-array grid, line and column in every message. The Excel sample is `public/maps/0.md` (87 rows). A 44 x 4,444 map parses in well under 200 ms. |
+| M3 Streaming and core combat | Done, one check open | Row streaming, pools, E1-E3 marching, bullets (B3), spatial hash, base integrity (B1), win (D5), lose. Big enemies spawn, march and take damage; their behaviours are M6. The low-end Android frame-rate check has not been run. |
+| M4 Clones | Not started | Next. |
 | M5 Weapons and powerups | Not started | |
 | M6 Big enemies | Not started | |
-| M7 Gates | Not started | |
-| M8 UI and persistence | Not started | |
-| M9 Assets and audio | Partly brought forward | Sprites done early. Audio, PNG size optimisation and the first-paint budget check remain. |
-| M10 Content and balance | Not started | |
+| M7 Gates | Not started | Gate tokens already parse. |
+| M8 UI and persistence | Not started | A minimal HUD and banners exist. |
+| M9 Assets and audio | Partly brought forward | Sprites done. Audio, PNG size optimisation and the first-paint budget check remain. |
+| M10 Content and balance | Not started | `public/maps/1.md` is a first draft for the lone shooter. |
 | M11 Hardening and release | Not started | |
+
+## Measurements so far
+
+- Tests: 130 passing (`npm test`). They cover the spring, the loop, the parser and every token,
+  streaming, combat, base integrity, win and lose, determinism and JSON round trip.
+- Sim cost: a 44 x 4,444 map of full rows runs with pools at fixed size; a tick with 1,850
+  enemies alive takes about 0.3 ms in Node (the frame budget is 16.7 ms).
+- Browser, Intel UHD integrated graphics, frame rate uncapped, dev map with about 1,900 enemies on
+  screen: 216 to 314 fps at 1920 x 1080, about 240 fps at 412 x 915 with device pixel ratio 2.
+  JS heap stays between 9 and 13 MB over 40 seconds.
+- Both builds were opened in headless Chrome with no console errors or failed requests: the
+  single-file build from `file://`, and the hosting build over HTTP from a subfolder.
+- Build sizes: hosting build about 185 KB of gzipped JavaScript, core atlas 150 KB, boss atlas
+  204 KB (loaded after the menu), tiles 100 KB. The single-file build is 1.26 MB.
+
+## Checks that need a person or a real device
+
+- M1: feel of the map slide with a finger on a real phone (smooth, eases to a stop at both
+  barriers). Mouse drag and the 100 ms frame clamp are covered by tests and a headless browser run.
+- M3: 30+ fps on a low-end Android phone with the window full of minions. Open the hosting build
+  with `?map=0` and wait about 40 seconds. If it falls short, PLAN section 9 names the fallback
+  (one batched mesh for minions).
 
 ## Next steps, in order
 
-1. M2: `src/parsers/tokens.ts` and `markdownMapParser.ts`, typed-array grid, tests for every
-   token, padding, rejection rules and message positions. Save the Excel sample as
-   `public/maps/0.md` (87 grid rows, already extracted from `map_maker.xlsx`).
-2. M3: row streaming in `World.ts`, pools, E1 to E3 marching, bullets, spatial hash, base
-   integrity, win and lose, minimal HUD, and a first draft `public/maps/1.md` to play.
-3. Update this file and `DESIGN_DECISIONS.md`, commit after each milestone.
+1. M4 Clones: ring formation with clockwise fill and re-pack, barrier squeeze, 4 starting clones
+   (B2), half-rate clone fire, cap of 100, weighted clone boxes (B4), contact trades (D12, B7),
+   promotion, lose when nobody is left. The white cat sprite and `CLONE_DRAW_SIZE` are ready.
+2. M5 to M11 as in `PLAN.md`.
+3. In M9: shrink the PNGs (palette quantisation) and confirm the 500 KB first-paint budget.
+4. In M10: replace the draft `1.md` with tuned levels from `scripts/gen-maps.mjs`.
 
-## Decisions taken so far that are not in PLAN.md
+## How the code is laid out
 
-Recorded in `DESIGN_DECISIONS.md` section 3 (A1 to A8). The main ones:
-
-- A1: art is cartoon vector style, per the owner's request, replacing the plan's pixel art.
-- A3: no Pixi asset loader, so the same code runs from a host and from `file://`.
-- A6: the shooter sits 8 gu above the base line so clone rings fit below it.
-- A7: the map follows the finger when dragging; keys move the shooter in the key's direction.
-
-Planned but not yet recorded (add to `DESIGN_DECISIONS.md` when implemented):
-
-- Portrait screens show extra rows above the 44-row window as a dimmed preview drawn straight
-  from the grid. The sim window stays 44 rows on every device, so balance does not depend on
-  screen shape.
-- `ER` cells are resolved by a hash of seed, row and column, so the preview and the spawn agree.
-- Until M8 adds the level select, the dev map is reached with `?map=0` in the URL.
+- `src/game/constants.ts`: every tunable. No balance numbers anywhere else.
+- `src/game/` (no Pixi): `Game.ts` loop and state machine, `Sim.ts` one tick, `World.ts` row
+  streaming, `Enemy.ts`, `Projectile.ts`, `Player.ts`, `Collision.ts`, `Pool.ts`, `Fx.ts`,
+  `rng.ts`, `Input.ts`, `maps.ts`. `HUD.ts` is the one UI file here and may use Pixi.
+- `src/parsers/`: `tokens.ts` (token table), `markdownMapParser.ts`.
+- `src/render/`: `Renderer.ts`, `ParticleSet.ts`, `textures.ts`.
+- `src/assets/`: asset URLs for the hosting build and the single-file build (`@assets` alias).
+- `scripts/gen-sprites.mjs`: all art.
 
 ## Repository state
 
@@ -66,9 +83,5 @@ Planned but not yet recorded (add to `DESIGN_DECISIONS.md` when implemented):
   content as `PLAN.md`).
 - `SPEC.md` is a copy of `old/FREE-WARS_v1.txt`. That file ends in the middle of section 11.2,
   so the plan's section 5 is the only description of the grid format.
-
-## Checks that need a person or a real device
-
-- M1: feel of the map slide with a finger on a real phone (smooth, eases to a stop at both
-  barriers). Mouse drag and the 100 ms frame clamp are covered by tests and a headless browser run.
-- Expected from M3: frame rate on a low-end Android phone with the window full of minions.
+- `PLAN.md` section 7 still says pixel art; decision A1 in `DESIGN_DECISIONS.md` records the
+  owner's later choice of cartoon vector art.

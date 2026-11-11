@@ -6,6 +6,13 @@ against a marching army of rats. Drag to slide the map; the swarm fires on its o
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
 
+## Play
+
+- Drag left or right to slide the map. The black cat stays in the middle and fires on its own.
+- Desktop: arrow keys or A/D also slide; P or Escape pauses; Enter or Space confirms.
+- Rats that reach the gold line at the bottom damage the base. A boss reaching it ends the level.
+- Add `?map=0` to the address to open the dev map (a stress test, not a balanced level).
+
 ## Develop
 
 ```
