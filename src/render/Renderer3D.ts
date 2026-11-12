@@ -42,12 +42,15 @@ import {
   ENEMY_STATS,
   ENEMY_TYPE_COUNT,
   FIRE_RATE,
+  GATE_TYPE,
+  GATE_WIDTH,
   MARCH_SPEED,
   MAX_RENDER_RESOLUTION,
   POOL_BULLETS,
   POOL_ENEMIES,
   POOL_PARTICLES,
   POOL_POWERUPS,
+  POWERUP_WIDTH,
   PREVIEW_ROWS,
   SHADOW_MAP_SIZE,
   SHOOTER_DRAW_SCALE,
@@ -62,6 +65,7 @@ import { FX_BASE, FX_CAT, FX_HIT, FX_KILL, FX_PICKUP } from '../game/Fx';
 import type { GameView, RenderFrame } from '../game/Game';
 import { HUD } from '../game/HUD';
 import { getLayout } from '../game/layout';
+import { cellSpec } from '../parsers/tokens';
 import {
   blobGeometry,
   bulletGeometry,
@@ -203,36 +207,42 @@ function laneTexture(): CanvasTexture {
   return texture;
 }
 
-/** A rounded label such as "+10" for the faces of a clone box. */
+/** A label such as "+10" for the faces of a box or a gate, twice as wide as it is tall. */
 function labelTexture(text: string, background: string): CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 128;
+  canvas.width = 256;
+  canvas.height = 128;
   const g = canvas.getContext('2d') as CanvasRenderingContext2D;
   g.fillStyle = background;
-  g.fillRect(0, 0, 128, 128);
+  g.fillRect(0, 0, 256, 128);
   g.lineWidth = 8;
   g.strokeStyle = 'rgba(255,255,255,0.55)';
-  g.strokeRect(6, 6, 116, 116);
-  g.font = '900 60px "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
+  g.strokeRect(6, 6, 244, 116);
+  g.font = '900 76px "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
   g.lineWidth = 12;
   g.strokeStyle = '#1b1736';
-  g.strokeText(text, 64, 68);
+  g.strokeText(text, 128, 70);
   g.fillStyle = '#ffffff';
-  g.fillText(text, 64, 68);
+  g.fillText(text, 128, 70);
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;
 }
 
+/** Face and side colours of the four clone boxes, then of a gate whose reward is a surprise. */
 const BOX_COLORS: readonly [string, number][] = [
   ['#2fb85c', 0x1f8a43],
   ['#1fa7b8', 0x157887],
   ['#8a5cf0', 0x6238c4],
   ['#f2a000', 0xbf7a00],
+  ['#e0448f', 0xa82566],
 ];
+const MYSTERY = 4;
+/** Which label a gate carries: its clone box, or a question mark for anything else. */
+const gateLabel = (drop: number): number => (drop >= 1 && drop <= 4 ? drop - 1 : MYSTERY);
 
 /**
  * The 3D view (decision A20). A perspective camera looks down the lane from
@@ -253,6 +263,7 @@ export class Renderer3D implements GameView {
   private readonly bulletCores: Batch;
   private readonly bulletGlows: Batch;
   private readonly boxes: Batch[] = [];
+  private readonly gates: Batch[] = [];
   private readonly fx: Batch;
   private readonly heroRing: Mesh;
 
@@ -335,15 +346,25 @@ export class Renderer3D implements GameView {
     this.bulletGlows.mesh.renderOrder = 3;
     this.scene.add(this.bulletCores.mesh, this.bulletGlows.mesh);
 
-    const crate = new BoxGeometry(1.7, 1.7, 1.7).translate(0, 0.95, 0);
+    // Boxes and gates are as wide as the side strips (A27). A gate is an upright panel,
+    // leaning back so its label faces the camera; a box is the crate it drops.
+    const crate = new BoxGeometry(POWERUP_WIDTH - 0.5, 1.5, 1.7).translate(0, 0.9, 0);
+    const panel = new BoxGeometry(GATE_WIDTH - 0.25, 2.1, 0.5).rotateX(-0.6).translate(0, 1.0, 0);
     BOX_COLORS.forEach(([face, sideColor], i) => {
       const side = new MeshLambertMaterial({ color: sideColor });
-      const label = new MeshLambertMaterial({ map: labelTexture(`+${CLONE_BOX_AMOUNTS[i]}`, face) });
-      // Box faces: +x, -x, +y, -y, +z, -z. The label shows on top and towards the camera.
-      const batch = new Batch(crate, [side, side, label, side, label, side], POOL_POWERUPS);
-      batch.mesh.castShadow = true;
-      this.boxes.push(batch);
-      this.scene.add(batch.mesh);
+      const text = i === MYSTERY ? '?' : `+${CLONE_BOX_AMOUNTS[i]}`;
+      const label = new MeshLambertMaterial({ map: labelTexture(text, face) });
+      // Box faces: +x, -x, +y, -y, +z, -z.
+      const gate = new Batch(panel, [side, side, side, side, label, side], POOL_POWERUPS, true);
+      gate.mesh.castShadow = true;
+      this.gates.push(gate);
+      this.scene.add(gate.mesh);
+      if (i === MYSTERY) return;
+      // On a box the label shows on top and towards the camera.
+      const box = new Batch(crate, [side, side, label, side, label, side], POOL_POWERUPS);
+      box.mesh.castShadow = true;
+      this.boxes.push(box);
+      this.scene.add(box.mesh);
     });
 
     this.fx = new Batch(
@@ -575,6 +596,7 @@ export class Renderer3D implements GameView {
     const u = UNIT_DRAW_SCALE;
     const clock = Math.floor(time * 14);
     for (let type = 1; type <= ENEMY_TYPE_COUNT; type++) this.rats[type].begin();
+    for (const gate of this.gates) gate.begin();
 
     // Rows that have not spawned yet, visible beyond the top of the window
     // (decision A9). Drawn straight from the grid, a little darker.
@@ -587,6 +609,13 @@ export class Renderer3D implements GameView {
         for (let c = 0; c < COLS; c++) {
           const type = layout.type[r * COLS + c];
           if (type === 0) continue;
+          if (type === GATE_TYPE) {
+            const spec = cellSpec(map, map.cells[r * COLS + layout.source[r * COLS + c]]);
+            const gate = this.gates[gateLabel(spec.drop)];
+            gate.add(c + GATE_WIDTH / 2, 0, front - 0.5, 1, 1, 1);
+            gate.tint(0.62, 0.62, 0.7);
+            continue;
+          }
           if (type <= 3) {
             const hop = HOP[(clock + r * 5 + c * 3) & 15];
             this.rats[type].add(c + 0.5, 0.14 * hop * u, front - 0.5, u, u * (1 + 0.05 * hop), u);
@@ -607,6 +636,12 @@ export class Renderer3D implements GameView {
       if (!e.active) continue;
       const ex = e.prevX + (e.x - e.prevX) * alpha;
       const ez = e.prevY + (e.y - e.prevY) * alpha;
+      if (e.type === GATE_TYPE) {
+        const gate = this.gates[gateLabel(e.drop)];
+        gate.add(ex, 0, ez, 1, 1, 1);
+        if (e.flash > 0) gate.tint(1.5, 1.5, 1.5);
+        continue;
+      }
       const batch = this.rats[e.type];
       if (e.type <= 3) {
         const hop = HOP[(clock + e.row * 5 + Math.floor(e.x) * 3) & 15];
@@ -622,6 +657,7 @@ export class Renderer3D implements GameView {
     }
 
     for (let type = 1; type <= ENEMY_TYPE_COUNT; type++) this.rats[type].end();
+    for (const gate of this.gates) gate.end();
   }
 
   private drawBullets(frame: RenderFrame): void {
@@ -669,9 +705,9 @@ export class Renderer3D implements GameView {
           fx.tint(1.0 * fade, 0.85 * fade, 0.35 * fade);
           break;
         case FX_KILL: {
-          const size = Math.min(f.size, 6) * (1.0 + 1.4 * t) * 1.2;
+          const size = Math.min(f.size, 6) * (0.8 + 0.9 * t);
           fx.add(f.x, 0.8, f.y, size, size * 0.8, size);
-          fx.tint(0.75 * fade, 0.7 * fade, 0.6 * fade);
+          fx.tint(0.34 * fade, 0.3 * fade, 0.24 * fade);
           break;
         }
         case FX_BASE: {
@@ -681,15 +717,15 @@ export class Renderer3D implements GameView {
           break;
         }
         case FX_CAT: {
-          const size = 1.4 + 1.6 * t;
+          const size = 1.2 + 1.3 * t;
           fx.add(f.x, 0.9, f.y, size, size, size);
-          fx.tint(0.35 * fade, 0.6 * fade, 1.0 * fade);
+          fx.tint(0.2 * fade, 0.36 * fade, 0.7 * fade);
           break;
         }
         case FX_PICKUP: {
-          const size = 2.5 + 5 * t;
-          fx.add(f.x, 1.0 + 2.5 * t, f.y, size, size * 0.6, size);
-          fx.tint(0.4 * fade, 1.0 * fade, 0.5 * fade);
+          const size = 2.2 + 3.2 * t;
+          fx.add(f.x, 1.0 + 2.5 * t, f.y, size, size * 0.5, size);
+          fx.tint(0.12 * fade, 0.42 * fade, 0.18 * fade);
           break;
         }
         default:

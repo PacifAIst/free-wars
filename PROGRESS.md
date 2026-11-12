@@ -3,7 +3,7 @@
 Status of the build against the goals in `PLAN.md` section 8. This file is the resume point:
 read it first when picking the work up again. Updated at every milestone and whenever work pauses.
 
-Last updated: 2026-11-11, after the owner's review of the first build.
+Last updated: 2026-11-12, after the owner's third review.
 
 ## Where things stand
 
@@ -16,8 +16,12 @@ disagree.
   lit models built from code, shadows, glowing bullets. Pixi.js is gone.
 - **Rules (A18):** no lives at the goal line, contact kills cats including the shooter, enemies
   about 2.7 times faster.
-- **Crowd behaviour (A19, A21):** rats converge on the swarm in a wedge, never overlap, flow
-  round big rats; a big rat's footprint counts in the grid.
+- **Crowd behaviour (A21, A28):** rats march straight for the goal line in full-width bands,
+  never overlap, and flow round big rats; a big rat's footprint counts in the grid.
+- **Powerups (A27):** only from the side gates and the fat rats. Gates are four cells wide,
+  take hits, break and drop a wide box.
+- **Start and controls (A28):** one black cat at the start; the swarm follows the finger; every
+  cat is killed by a rat that touches its body.
 - **Clones (M4) and clone boxes (part of M5)** are in, because contact trades need a swarm.
 
 ## Milestones
@@ -31,16 +35,16 @@ disagree.
 | M4 Clones | Done | Ring formation, wall squeeze, 4 starting clones, half-rate fire, cap of 100, contact trades (A18, B7), promotion, loss when no cat is left. Tests cover slots at 1, 6, 7 and 100 clones, re-pack and trades. |
 | M5 Weapons and powerups | Started | Falling clone boxes, weighted rolls (B4) and pickup (B8, B9) work. Minigun, laser, rocket and tank are not built; their drop codes drop nothing yet. |
 | M6 Big enemies | Started | E4-E8 have 3D models, pursuit, footprints and rate-limited contact kills. Rockets, smash, charge and HP bars are not built. |
-| M7 Gates | Not started | Gate tokens already parse. |
+| M7 Gates | Mostly done | Gates in the edge strips: resistance as HP, bullet blocking, drop on break, harmless to cats. Brought forward because powerups now come from them (A27). |
 | M8 UI and persistence | Not started | Minimal HTML HUD and banners exist. Needed: level select with the 44 maps, locked except the next one, shown after a win; best times; settings; save. |
 | M9 Assets and audio | Changed | No art files ship any more: models are code. Audio remains. |
-| M10 Content and balance | Not started | `public/maps/1.md` is a draft made of rat blocks. A simple bot wins it on three seeds. |
+| M10 Content and balance | Not started | `public/maps/1.md` is a draft: gates first, then full-width bands 1 to 5 rows deep and one fat sniper rat. A simple bot wins it in about 50 seconds on three seeds. |
 | M11 Hardening and release | Not started | |
 
 ## Measurements
 
-- Tests: 168 passing (`npm test`). They cover the spring, the loop, the parser and every token,
-  streaming, footprints, pursuit, enemy collision, clones, contact trades, boxes, win and loss,
+- Tests: 170 passing (`npm test`). They cover the spring, the loop, the parser and every token,
+  streaming, footprints, gates, enemy collision, clones, contact trades, boxes, win and loss,
   determinism and JSON round trip, and a bot that must win map 1.
 - Browser, Intel UHD integrated graphics, frame rate uncapped:
   map 1 runs at about 100 to 200 fps at phone size with device pixel ratio 2.
@@ -58,6 +62,11 @@ disagree.
   the "all art from code" rule in PLAN section 10, so it is the owner's call.
 - **Balance** is only checked by the bot on map 1. Speed, clone boxes and block sizes will need
   tuning together in M10.
+
+## Screenshots
+
+`screenshots/` in the project folder holds pictures of the current build, taken by playing the
+start of map 1 with the keyboard in headless Chrome. The folder is not tracked in git.
 
 ## Checks that need a person or a real device
 

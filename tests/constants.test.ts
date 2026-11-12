@@ -29,7 +29,8 @@ describe('constants', () => {
   });
 
   it('has stats for all eight enemy types that fit the lane', () => {
-    expect(ENEMY_STATS).toHaveLength(ENEMY_TYPE_COUNT + 1);
+    // Index 0 is unused and the last entry is the side gate.
+    expect(ENEMY_STATS).toHaveLength(ENEMY_TYPE_COUNT + 2);
     for (let t = 1; t <= ENEMY_TYPE_COUNT; t++) {
       const s = ENEMY_STATS[t];
       expect(s.hp).toBeGreaterThan(0);

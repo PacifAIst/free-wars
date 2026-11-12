@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-single/
 coverage/
+screenshots/
 *.log
 .DS_Store
 Thumbs.db

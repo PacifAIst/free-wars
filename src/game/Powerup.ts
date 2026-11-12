@@ -12,6 +12,7 @@ import {
   DROP_WEIGHTS,
   PICKUP_MARGIN,
   POWERUP_SPEED,
+  POWERUP_WIDTH,
   SHOOTER_Y,
   SIM_DT,
   WINDOW_ROWS,
@@ -56,16 +57,17 @@ export function rollDrop(sim: SimState): number {
 }
 
 /**
- * Drops a falling box where an enemy died. Only clone boxes exist so far: the
- * weapon powerups (codes P5-P8) arrive with milestone M5, and until then those
- * codes drop nothing.
+ * Drops a falling box where a gate broke or a fat rat died.
+ *
+ * Only clone boxes exist so far. The weapon powerups (codes P5-P8) arrive with
+ * milestone M5; until then a weapon code falls as a clone box instead, rolled
+ * on the clone-box weights, so a broken gate is never empty-handed.
  */
 export function spawnDrop(sim: SimState, kind: number, x: number, y: number): void {
-  if (!isCloneBox(kind)) return;
   const index = poolAlloc(sim.powerups);
   if (index < 0) return;
   const p = sim.powerups.items[index];
-  p.kind = kind;
+  p.kind = isCloneBox(kind) ? kind : DROP_CLONE_1 + pickWeighted(sim, CLONE_BOX_WEIGHTS);
   p.x = x;
   p.y = y;
   p.prevY = y;
@@ -73,8 +75,9 @@ export function spawnDrop(sim: SimState, kind: number, x: number, y: number): vo
 
 /**
  * Boxes fall towards the goal line (B8). B9: a box is picked up when it
- * overlaps the formation's bounding circle. A box that reaches the goal line
- * is lost.
+ * overlaps the formation. Boxes are wide, like the side gates they come from,
+ * so the test is the formation's circle against the box's width. A box that
+ * reaches the goal line is lost.
  */
 export function stepPowerups(sim: SimState): void {
   const { items } = sim.powerups;
@@ -84,10 +87,10 @@ export function stepPowerups(sim: SimState): void {
     p.prevY = p.y;
     p.y += POWERUP_SPEED * SIM_DT;
 
-    const reach = formationRadius(sim.clones) + PICKUP_MARGIN;
-    const dx = p.x - sim.shooter.x;
-    const dy = p.y - SHOOTER_Y;
-    if (dx * dx + dy * dy <= reach * reach) {
+    const radius = formationRadius(sim.clones);
+    const dx = Math.abs(p.x - sim.shooter.x);
+    const dy = Math.abs(p.y - SHOOTER_Y);
+    if (dx <= radius + POWERUP_WIDTH / 2 && dy <= radius + PICKUP_MARGIN) {
       const amount = CLONE_BOX_AMOUNTS[p.kind - DROP_CLONE_1];
       addClones(sim, amount);
       spawnFx(sim, FX_PICKUP, p.x, p.y, amount);

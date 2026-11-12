@@ -22,7 +22,7 @@ import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../src/game/Player';
 import { isCloneBox, rollDrop, spawnDrop } from '../src/game/Powerup';
 import { createSim } from '../src/game/Sim';
 import type { SimState } from '../src/types';
-import { activeEnemies, createScratch, LONE, mapFromRows, rowWith, run } from './helpers';
+import { createScratch, LONE, mapFromRows, rowWith, run } from './helpers';
 
 /** One rat far up the lane, so the level stays in progress while a test sets things up. */
 const FAR = mapFromRows([...Array.from({ length: 60 }, () => ''), rowWith({ 0: 'E1' })]);
@@ -153,18 +153,22 @@ describe('contact trades (D12 as changed by A18)', () => {
     expect(sim.phase).toBe('playing');
   });
 
-  it('an E2 costs two cats: it survives the first trade', () => {
+  it('an E2 costs two cats', () => {
     const sim = createSim(FAR, 1, { startClones: 6 });
-    const scratch = createScratch();
+    // It lands among the clones of ring 1, in reach of more than one of them.
     touch(sim, 2, cloneX(sim, 0), cloneY(0));
-    expect(sim.clones).toBe(5);
-    expect(sim.kills).toBe(0);
-    const rat = activeEnemies(sim).find((e) => e.type === 2)!;
-    expect(rat.hp).toBe(1);
-    // The formation re-packs, so a cat stands on that spot again and trades next tick.
-    scratch.hash.build(sim.enemies);
-    stepContact(sim, scratch.hash);
     expect(sim.clones).toBe(4);
+    expect(sim.kills).toBe(1);
+    expect(sim.phase).toBe('playing');
+  });
+
+  it('every clone has a body: a rat passing between two of them still hits one', () => {
+    const sim = createSim(FAR, 1, { startClones: 6 });
+    // Half way between slot 0 and slot 1: on neither centre.
+    const x = (cloneX(sim, 0) + cloneX(sim, 1)) / 2;
+    const y = (cloneY(0) + cloneY(1)) / 2;
+    touch(sim, 1, x, y);
+    expect(sim.clones).toBe(5);
     expect(sim.kills).toBe(1);
   });
 
@@ -279,14 +283,16 @@ describe('clone boxes (B4, B8, B9)', () => {
     expect(total).toBe(rolls);
   });
 
-  it('only clone boxes exist until the weapons milestone', () => {
+  it('until the weapons milestone a weapon code falls as a clone box', () => {
     const sim = createSim(FAR, 1, LONE);
     expect(isCloneBox(DROP_CLONE_1)).toBe(true);
     expect(isCloneBox(DROP_CLONE_50)).toBe(true);
     expect(isCloneBox(DROP_MINIGUN)).toBe(false);
     spawnDrop(sim, DROP_MINIGUN, 10, 10);
-    expect(sim.powerups.live).toBe(0);
-    spawnDrop(sim, DROP_CLONE_10, 10, 10);
-    expect(sim.powerups.live).toBe(1);
+    spawnDrop(sim, DROP_CLONE_10, 12, 10);
+    expect(sim.powerups.live).toBe(2);
+    const kinds = sim.powerups.items.filter((p) => p.active).map((p) => p.kind);
+    expect(isCloneBox(kinds[0])).toBe(true);
+    expect(kinds[1]).toBe(DROP_CLONE_10);
   });
 });

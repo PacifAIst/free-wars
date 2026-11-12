@@ -3,10 +3,12 @@ import type { SpatialHash } from './Collision';
 import {
   BIG_CONTACT_MIN_SIZE,
   BIG_CONTACT_RATE,
+  CAT_RADIUS,
   CLONE_CAP,
   CLONE_FIRE_RATE_FACTOR,
   CONTACT_DAMAGE,
   FIRE_RATE,
+  GATE_TYPE,
   MUZZLE_OFFSET,
   RING_SLOTS_PER_RING,
   RING_SPACING,
@@ -95,9 +97,9 @@ export function fireClones(sim: SimState): void {
 }
 
 /**
- * Contact trades (D12, as changed by the owner in decision A18): an enemy that
- * touches a cat kills it and takes CONTACT_DAMAGE. The black shooter is not
- * immune. When it dies the oldest clone is promoted, which leaves one clone
+ * Contact trades (D12, as changed by the owner in decisions A18 and A28): an
+ * enemy that touches any cat, clone or shooter, kills it and takes
+ * CONTACT_DAMAGE. The black shooter is not immune. When it dies the oldest clone is promoted, which leaves one clone
  * fewer; with no clone left the level is lost.
  *
  * B7: an enemy 8x8 or larger kills at most BIG_CONTACT_RATE cats per second.
@@ -108,14 +110,21 @@ export function stepContact(sim: SimState, hash: SpatialHash): void {
   for (let slot = sim.clones - 1; slot >= -1; slot--) {
     const x = slot < 0 ? sim.shooter.x : cloneX(sim, slot);
     const y = slot < 0 ? SHOOTER_Y : cloneY(slot);
-    const hit = hash.queryPoint(x, y, sim.enemies);
+    // Every cat has a body: an enemy touches it when their outlines meet,
+    // not only when it steps on the cat's exact centre.
+    const found = hash.queryRect(x - CAT_RADIUS, y - CAT_RADIUS, x + CAT_RADIUS, y + CAT_RADIUS, sim.enemies, touching);
+    let hit = -1;
+    for (let n = 0; n < found && hit < 0; n++) {
+      const enemy = enemies[touching[n]];
+      // Gates do not hurt, and a big enemy can only kill so many cats per second (B7).
+      if (enemy.type === GATE_TYPE) continue;
+      if (enemy.w >= BIG_CONTACT_MIN_SIZE && enemy.contact > 0) continue;
+      hit = touching[n];
+    }
     if (hit < 0) continue;
 
     const enemy = enemies[hit];
-    if (enemy.w >= BIG_CONTACT_MIN_SIZE) {
-      if (enemy.contact > 0) continue;
-      enemy.contact = 1 / BIG_CONTACT_RATE;
-    }
+    if (enemy.w >= BIG_CONTACT_MIN_SIZE) enemy.contact = 1 / BIG_CONTACT_RATE;
 
     spawnFx(sim, FX_CAT, x, y, 1);
     damageEnemy(sim, hit, CONTACT_DAMAGE, x, y);
@@ -127,3 +136,6 @@ export function stepContact(sim: SimState, hash: SpatialHash): void {
     sim.clones--;
   }
 }
+
+/** Scratch list of enemies touching one cat. Not part of the sim state. */
+const touching = new Int32Array(8);

@@ -7,6 +7,7 @@ import {
   ENEMY_STATS,
   FUNNEL_END_ROWS,
   FUNNEL_START_ROW,
+  GATE_TYPE,
   HIT_FLASH_SECONDS,
   MINION_CHASE_SPEED,
   SHOOTER_Y,
@@ -93,7 +94,8 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
     spawnFx(sim, FX_HIT, hitX, hitY, 1);
     return false;
   }
-  const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
+  // Gates and the fat rats (E4, E8) always drop something; other enemies only an authored drop.
+  const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 || e.type === GATE_TYPE ? rollDrop(sim) : 0;
   if (drop > 0) spawnDrop(sim, drop, e.x, Math.max(0, e.y));
   spawnFx(sim, FX_KILL, e.x, e.y, e.w);
   poolFree(sim.enemies, index);
@@ -166,6 +168,11 @@ export function stepEnemies(sim: SimState): void {
     if (e.contact > 0) e.contact -= SIM_DT;
     if (e.y + e.h / 2 < WINDOW_ROWS) continue;
 
+    if (e.type === GATE_TYPE) {
+      // A gate that was not broken in time is simply a missed powerup.
+      poolFree(sim.enemies, i);
+      continue;
+    }
     if (ENEMY_STATS[e.type].boss) {
       sim.phase = 'lost';
       sim.lossReason = 'boss';

@@ -1,22 +1,24 @@
 import { cellSpec } from '../parsers/tokens';
 import type { MapData } from '../types';
-import { BIG_ENEMY_MIN_TYPE, COLS, ENEMY_STATS, RANDOM_MINION_TYPES } from './constants';
+import { BIG_ENEMY_MIN_TYPE, COLS, ENEMY_STATS, GATE_TYPE, GATE_WIDTH, RANDOM_MINION_TYPES } from './constants';
 import { cellHash } from './rng';
 
 /**
- * Where every enemy of a map actually stands, after footprints are taken into
- * account (decision A21). Enemies never overlap: a big enemy claims every cell
- * of its footprint, and nothing else may stand there.
+ * Where everything in a map actually stands, after footprints are taken into
+ * account (decision A21). Nothing overlaps: a big enemy claims every cell of
+ * its footprint, a gate claims its strip, and nothing else may stand there.
  *
  *  - A big enemy keeps the cell of its token as the front-left corner of its
  *    footprint (D11). If that span is taken, or would leave the lane, it moves
  *    to the nearest free span in the same row; if the row has none it is left out.
- *  - A minion whose cell lies inside a big enemy's footprint is left out.
+ *  - A gate token in one of the four edge columns becomes one gate that fills
+ *    that side's strip, four cells wide and one row deep (decision A27).
+ *  - A minion whose cell is already claimed is left out.
  */
 export interface MapLayout {
-  /** Enemy type 1..8 at the front-left cell of each placed enemy, 0 elsewhere. Row-major. */
+  /** Type at the front-left cell of each placed enemy or gate (1..8, or GATE_TYPE), 0 elsewhere. Row-major. */
   type: Uint8Array;
-  /** For a placed enemy, the column of the token it came from (for its HP override and drop). */
+  /** For a placed cell, the column of the token it came from (for its HP and drop). */
   source: Uint8Array;
   /** Tokens that could not be placed. */
   dropped: number;
@@ -67,6 +69,20 @@ function resolve(map: MapData, seed: number): MapLayout {
       type[base + left] = t;
       source[base + left] = c;
       for (let k = left; k < left + w; k++) freeFrom[k] = r + h;
+    }
+
+    // Gates: one per side strip and row, whichever edge column the token is in.
+    for (let c = 0; c < COLS; c++) {
+      if (cellSpec(map, map.cells[base + c]).kind !== 'gate') continue;
+      const strip = c < COLS / 2 ? 0 : COLS - GATE_WIDTH;
+      if (type[base + strip] === GATE_TYPE) continue;
+      if (!spanFree(strip, GATE_WIDTH, r)) {
+        dropped++;
+        continue;
+      }
+      type[base + strip] = GATE_TYPE;
+      source[base + strip] = c;
+      for (let k = strip; k < strip + GATE_WIDTH; k++) freeFrom[k] = r + 1;
     }
 
     // Then minions, wherever a cell is still free.

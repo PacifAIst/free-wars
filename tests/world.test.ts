@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BIG_CHASE_SPEED,
   COLS,
+  DROP_CLONE_10,
+  GATE_TYPE,
+  GATE_WIDTH,
   ENEMY_STATS,
   FUNNEL_START_ROW,
   MARCH_SPEED,
   MINION_SPACING,
   POOL_ENEMIES,
   PRE_ADVANCE_ROWS,
-  SHOOTER_Y,
   SIM_DT,
   SIM_HZ,
   SPEED_SCALE,
@@ -158,7 +159,6 @@ describe('enemy placement', () => {
     expect(enemyTypeAt(map, 1, 0, 0)).toBe(0);
     expect(enemyTypeAt(map, 1, 0, 1)).toBe(2);
     expect(enemyTypeAt(map, 1, 0, 5)).toBe(0);
-    expect(createSim(map, 1).enemies.live).toBe(1);
   });
 });
 
@@ -245,71 +245,94 @@ describe('footprints in the grid (A21)', () => {
   });
 });
 
-describe('pursuit (A19)', () => {
-  it('big enemies steer sideways towards the swarm at BIG_CHASE_SPEED', () => {
-    const map = mapFromRows([rowWith({ 0: 'E4' })]);
-    const sim = createSim(map, 1, LONE);
-    const e4 = activeEnemies(sim)[0];
-    expect(e4.x).toBe(4);
-    run(sim, map, createScratch(), SIM_HZ);
-    expect(e4.x).toBeCloseTo(4 + BIG_CHASE_SPEED, 6);
-    expect(e4.prevX).toBeLessThan(e4.x);
-  });
-
-  it('a big enemy stops over the swarm and follows it when the map slides', () => {
-    const map = mapFromRows([rowWith({ 30: 'E4-100000' })]);
+describe('march (A28: pursuit is switched off)', () => {
+  it('every rat marches straight for the goal line, whatever the swarm does', () => {
+    const map = mapFromRows([rowWith({ 3: 'E1', 10: 'E4', 40: 'E3' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
-    const e4 = activeEnemies(sim)[0];
-    run(sim, map, scratch, 8 * SIM_HZ);
-    expect(e4.x).toBeCloseTo(sim.shooter.x, 6);
-    run(sim, map, scratch, 1, { targetDelta: -15, keyDir: 0 });
-    run(sim, map, scratch, 2 * SIM_HZ);
-    expect(sim.shooter.x).toBeCloseTo(7, 1);
-    expect(e4.x).toBeLessThan(22);
-    expect(e4.x).toBeGreaterThan(7);
+    const before = activeEnemies(sim).map((e) => ({ e, x: e.x, y: e.y }));
+    run(sim, map, scratch, 1, { targetDelta: 15, keyDir: 0 });
+    run(sim, map, scratch, 5 * SIM_HZ);
+    for (const { e, x, y } of before) {
+      expect(e.x).toBe(x);
+      expect(e.y - y).toBeGreaterThan(5 * e.speed);
+    }
   });
 
-  it('keeps a big footprint inside the lane', () => {
-    const map = mapFromRows([rowWith({ 10: 'E5-100000' })]);
-    const sim = createSim(map, 1, LONE);
-    const scratch = createScratch();
-    run(sim, map, scratch, 1, { targetDelta: -30, keyDir: 0 });
-    run(sim, map, scratch, 8 * SIM_HZ);
-    const e5 = activeEnemies(sim)[0];
-    expect(e5.x).toBe(e5.w / 2);
-  });
-
-  it('minions close in on the swarm from both sides', () => {
-    const map = mapFromRows([rowWith({ 3: 'E3', 40: 'E3' })]);
-    const sim = createSim(map, 1, LONE);
-    const scratch = createScratch();
-    const [left, right] = activeEnemies(sim).sort((a, b) => a.x - b.x);
-    run(sim, map, scratch, 6 * SIM_HZ);
-    expect(left.x).toBeGreaterThan(3.5 + 3);
-    expect(right.x).toBeLessThan(40.5 - 3);
-    // They arrive at the shooter instead of walking past it to the goal line.
-    while (sim.phase === 'playing' && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
-    expect(sim.lossReason).not.toBe('base');
-  });
-
-  it('a minion already in front of the swarm marches straight down', () => {
-    // With two rings the swarm is five cells wide, so column 21 is in front of it.
-    const map = mapFromRows([rowWith({ 21: 'E3-9999' })]);
-    const sim = createSim(map, 1, { startClones: 18 });
-    const rat = activeEnemies(sim)[0];
-    run(sim, map, createScratch(), 5 * SIM_HZ);
-    expect(rat.x).toBe(21.5);
-    expect(rat.y).toBeCloseTo(11.5 + 5 * MARCH_SPEED, 6);
-    expect(rat.y).toBeLessThan(SHOOTER_Y);
-  });
-
-  it('a rat always meets a lone shooter: it aims straight at it', () => {
-    const map = mapFromRows([rowWith({ 21: 'E3-9999' })]);
-    const sim = createSim(map, 1, LONE);
+  it('a rat that the swarm does not stop walks on to the goal line', () => {
+    const map = mapFromRows([rowWith({ 3: 'E1' })]);
+    const sim = createSim(map, 1, { startClones: 6 });
     const scratch = createScratch();
     while (sim.phase === 'playing' && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
-    expect(sim.lossReason).toBe('swarm');
+    expect(sim.phase).toBe('lost');
+    expect(sim.lossReason).toBe('base');
+    expect(sim.clones).toBe(6);
+  });
+});
+
+describe('side gates (A27)', () => {
+  it('a gate token in any edge column becomes one gate filling that strip', () => {
+    const map = mapFromRows([rowWith({ 2: 'G25-P3', 3: 'E1', 5: 'E1', 41: 'G7' })]);
+    const layout = getLayout(map, 1);
+    expect(layout.type[0]).toBe(GATE_TYPE);
+    expect(layout.type[COLS - GATE_WIDTH]).toBe(GATE_TYPE);
+    // The rat inside the strip is left out; the one beside it stays.
+    expect(layout.type[3]).toBe(0);
+    expect(layout.type[5]).toBe(1);
+
+    const sim = createSim(map, 1);
+    const gates = activeEnemies(sim).filter((e) => e.type === GATE_TYPE).sort((a, b) => a.x - b.x);
+    expect(gates).toHaveLength(2);
+    expect(gates[0]).toMatchObject({ x: 2, w: GATE_WIDTH, h: 1, hp: 25, drop: DROP_CLONE_10 });
+    expect(gates[1]).toMatchObject({ x: COLS - 2, w: GATE_WIDTH, h: 1, hp: 7, drop: 0 });
+    expect(sim.enemies.live).toBe(3);
+  });
+
+  it('breaks after taking its resistance in hits and drops its box', () => {
+    const map = mapFromRows([rowWith({ 0: 'G3-P3' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
+    const sim = createSim(map, 1, LONE);
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: -20, keyDir: 0 });
+    while (sim.powerups.live === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+    const box = sim.powerups.items.find((p) => p.active)!;
+    expect(box.kind).toBe(DROP_CLONE_10);
+    expect(box.x).toBe(2);
+    expect(sim.shots).toBeGreaterThanOrEqual(3);
+    // The swarm is under it, so the box is caught.
+    while (sim.clones === 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
+    expect(sim.clones).toBe(10);
+  });
+
+  it('shields what is behind it from bullets', () => {
+    const map = mapFromRows([rowWith({ 0: 'G999' }), emptyRow(), rowWith({ 2: 'E1' })]);
+    const sim = createSim(map, 1, LONE);
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: -19.6, keyDir: 0 });
+    run(sim, map, scratch, 4 * SIM_HZ);
+    expect(sim.kills).toBe(0);
+    const gate = activeEnemies(sim).find((e) => e.type === GATE_TYPE)!;
+    expect(gate.hp).toBeLessThan(999);
+  });
+
+  it('is harmless: it does not hurt cats and does not lose the level at the goal line', () => {
+    const map = mapFromRows([rowWith({ 0: 'G999' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
+    const sim = createSim(map, 1, { startClones: 6 });
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: -20, keyDir: 0 });
+    run(sim, map, scratch, 18 * SIM_HZ);
+    expect(sim.phase).toBe('playing');
+    expect(sim.clones).toBe(6);
+    expect(activeEnemies(sim).some((e) => e.type === GATE_TYPE)).toBe(false);
+    expect(sim.powerups.live).toBe(0);
+  });
+
+  it('with no drop code it still drops a box', () => {
+    const map = mapFromRows([rowWith({ 43: 'G2' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
+    const sim = createSim(map, 1, LONE);
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: 20, keyDir: 0 });
+    while (sim.clones === 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
+    expect([1, 3, 10, 50]).toContain(sim.clones);
   });
 });
 
@@ -342,7 +365,7 @@ describe('enemy collision (A21)', () => {
     expect(closest).toBeGreaterThan(MINION_SPACING * 0.6);
   });
 
-  it('big enemies chasing the same spot queue up side by side', () => {
+  it('big enemies side by side keep their footprints apart', () => {
     const map = mapFromRows([rowWith({ 0: 'E4-100000', 1: 'E4-100000', 2: 'E4-100000', 36: 'E4-100000' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();

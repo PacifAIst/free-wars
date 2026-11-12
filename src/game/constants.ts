@@ -60,23 +60,30 @@ export const ENEMY_STATS: readonly EnemyStats[] = [
   { w: 20, h: 20, hp: 3000, speedSpec: 10, boss: true }, // E6 charger
   { w: 20, h: 20, hp: 4000, speedSpec: 5, boss: true }, // E7 boss sniper
   { w: 30, h: 30, hp: 10000, speedSpec: 5, boss: true }, // E8 robo rat
+  { w: 4, h: 1, hp: 1, speedSpec: 10, boss: false }, // side gate (GATE_TYPE); HP is its resistance
 ];
 
 export const ENEMY_TYPE_COUNT = 8;
 
 /**
- * Pursuit (decision A19). Enemies go for the swarm, as in the reference video.
- *
- * Big enemies (E4-E8) steer straight at the shooter. Minions run along the
- * line towards the swarm, so the crowd closes on the cats and meets them
- * instead of slipping past at the lane edges. That is what makes the "first
- * rat across the goal line loses" rule fair.
+ * Pursuit (decision A19, switched off by A28). Every rat marches straight for
+ * the goal line. The code can still steer enemies at the swarm: a value above
+ * zero here turns it back on, for big enemies (E4-E8) or for minions.
  */
-export const BIG_CHASE_SPEED = 1.6;
+export const BIG_CHASE_SPEED = 0;
 /** Fastest sideways speed of a minion, in gu/s. Zero makes minions hold their column. */
-export const MINION_CHASE_SPEED = 5;
-/** Enemies of this type and above count as big: they chase directly and claim their footprint in the grid. */
+export const MINION_CHASE_SPEED = 0;
+/** Enemies of this type and above count as big: they claim their footprint in the grid and plough through minions. */
 export const BIG_ENEMY_MIN_TYPE = 4;
+
+/**
+ * Side gates (SPEC section 10, decision A27). A gate fills the four-cell strip
+ * at one edge of the lane, marches down with its row, soaks up bullets, and
+ * drops a powerup box when its resistance is used up. It shares the enemy
+ * pool under this type number.
+ */
+export const GATE_TYPE = 9;
+export const GATE_WIDTH = 4;
 /** Minions start to swing towards the swarm at this lane row and aim fully at it FUNNEL_END_ROWS above the shooter. */
 export const FUNNEL_START_ROW = 6;
 export const FUNNEL_END_ROWS = 5;
@@ -179,8 +186,8 @@ export const SPRING_ZETA = 0.9;
 export const KEY_PAN_SPEED = 26;
 /** Seconds of release velocity carried into the target on pointer release. */
 export const RELEASE_MOMENTUM_SECONDS = 0.12;
-/** +1: the map follows the finger (SPEC 5). -1: the swarm follows the finger. */
-export const DRAG_DIRECTION = 1;
+/** +1: the map follows the finger (SPEC 5). -1: the swarm follows the finger (the owner's choice, A28). */
+export const DRAG_DIRECTION = -1;
 
 // --- D9: -P# drop codes --------------------------------------------------------
 
@@ -205,8 +212,8 @@ export const CLONE_BOX_AMOUNTS: readonly number[] = [1, 3, 10, 50];
  * goal into a health bar again.
  */
 export const BASE_HP = 1;
-/** B2: clones at level start. */
-export const START_CLONES = 4;
+/** B2: clones at level start. The owner wants a level to begin with the black cat alone (A28). */
+export const START_CLONES = 0;
 /** B4: weighted clone box, in the order +1, +3, +10, +50. */
 export const CLONE_BOX_WEIGHTS: readonly number[] = [40, 35, 20, 5];
 /** B4: random drop table. */
@@ -224,8 +231,12 @@ export const BIG_CONTACT_RATE = 4;
 export const CONTACT_DAMAGE = 1;
 /** B8: powerup boxes fall faster than the army marches, so they are not buried in it. */
 export const POWERUP_SPEED = 6.0;
-/** B9: a box is picked up this far outside the outermost clone ring. */
+/** B9: a box is picked up this far outside the outermost clone ring, along the lane. */
 export const PICKUP_MARGIN = 0.8;
+/** Boxes are as wide as the side gates they come from (A27). */
+export const POWERUP_WIDTH = 4;
+/** A cat is touched by an enemy that comes within this distance of its centre (A28). */
+export const CAT_RADIUS = 0.45;
 /** B11: incoming enemy HP/s stays under this fraction of achievable DPS. */
 export const PRESSURE_RATIO = 0.6;
 /** B10: built-in level length range, in rows. */
