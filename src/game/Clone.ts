@@ -1,14 +1,16 @@
-import type { SimState } from '../types';
+import type { Enemy, SimState } from '../types';
 import type { SpatialHash } from './Collision';
 import {
   BIG_CONTACT_MIN_SIZE,
   BIG_CONTACT_RATE,
   CAT_RADIUS,
   CLONE_CAP,
+  CLONE_FIRE_JITTER,
   CLONE_FIRE_RATE_FACTOR,
   CONTACT_DAMAGE,
   FIRE_RATE,
   GATE_TYPE,
+  GATES_ARE_SHOT,
   MUZZLE_OFFSET,
   RING_SLOTS_PER_RING,
   RING_SPACING,
@@ -16,26 +18,27 @@ import {
   SIM_DT,
 } from './constants';
 import { damageEnemy } from './Enemy';
-import { FX_CAT, spawnFx } from './Fx';
+import { FX_CAT, FX_GATE, spawnFx } from './Fx';
 import { SHOOTER_MAX_X, SHOOTER_MIN_X } from './Player';
+import { poolFree } from './Pool';
+import { rewardAmount, rollDrop } from './Powerup';
 import { BULLET_REGULAR, spawnBullet } from './Projectile';
+import { nextRandom } from './rng';
 
 // The swarm. Clones are identical, so the state is just their number: clone i
 // stands in formation slot i. When one dies the formation re-packs, which
 // simply means the outermost slot empties (SPEC 6.2).
 
 const CLONE_FIRE_PERIOD = 1 / (FIRE_RATE * CLONE_FIRE_RATE_FACTOR);
-/** Spreads the clones' shots over the fire period, so they do not fire as one volley. */
-const STAGGER = 0.618;
 
 /** Number of slots in rings 1..k. */
 const slotsThroughRing = (k: number): number => (RING_SLOTS_PER_RING * k * (k + 1)) / 2;
 
 /**
  * Offsets of every formation slot from the shooter, in gu.
- * D8: ring k holds 6k slots at radius k. Slots fill clockwise from 12 o'clock,
- * then move out to the next ring (SPEC 6.2). y grows down the screen, so a
- * growing angle is clockwise as the player sees it.
+ * D8: ring k holds 6k slots at radius k times RING_SPACING. Slots fill
+ * clockwise from 12 o'clock, then move out to the next ring (SPEC 6.2). y
+ * grows down the screen, so a growing angle is clockwise as the player sees it.
  */
 export const SLOT_X: readonly number[] = [];
 export const SLOT_Y: readonly number[] = [];
@@ -74,12 +77,17 @@ export function cloneY(slot: number): number {
   return SHOOTER_Y + SLOT_Y[slot];
 }
 
+/** Seconds a clone waits after a shot: the normal interval, varied at random so no two keep the same beat (A31). */
+function nextCloneWait(sim: SimState): number {
+  return CLONE_FIRE_PERIOD * (1 + (nextRandom(sim) * 2 - 1) * CLONE_FIRE_JITTER);
+}
+
 /** Adds up to `amount` clones; anything over the cap is discarded. Returns how many were added. */
 export function addClones(sim: SimState, amount: number): number {
   const added = Math.max(0, Math.min(amount, CLONE_CAP - sim.clones));
   for (let i = 0; i < added; i++) {
-    const slot = sim.clones++;
-    sim.cloneCooldowns[slot] = ((slot * STAGGER) % 1) * CLONE_FIRE_PERIOD;
+    // A new clone starts somewhere in its fire interval, not on the beat of the others.
+    sim.cloneCooldowns[sim.clones++] = nextRandom(sim) * CLONE_FIRE_PERIOD;
   }
   return added;
 }
@@ -91,7 +99,7 @@ export function fireClones(sim: SimState): void {
     cooldowns[slot] -= SIM_DT;
     if (cooldowns[slot] <= 0) {
       spawnBullet(sim, cloneX(sim, slot), cloneY(slot) - MUZZLE_OFFSET, BULLET_REGULAR);
-      cooldowns[slot] += CLONE_FIRE_PERIOD;
+      cooldowns[slot] += nextCloneWait(sim);
     }
   }
 }
@@ -109,14 +117,37 @@ function loseCat(sim: SimState, x: number, y: number): boolean {
   return true;
 }
 
+/** Number of cats, the shooter included, standing within the width of `gate`. */
+function catsInWay(sim: SimState, gate: Enemy): number {
+  const reach = gate.w / 2 + CAT_RADIUS;
+  let count = Math.abs(sim.shooter.x - gate.x) < reach ? 1 : 0;
+  for (let slot = 0; slot < sim.clones; slot++) {
+    if (Math.abs(cloneX(sim, slot) - gate.x) < reach) count++;
+  }
+  return count;
+}
+
+/** True when some cat's body touches the gate. */
+function touchesSwarm(sim: SimState, gate: Enemy): boolean {
+  const reachX = gate.w / 2 + CAT_RADIUS;
+  const reachY = gate.h / 2 + CAT_RADIUS;
+  if (Math.abs(sim.shooter.x - gate.x) < reachX && Math.abs(SHOOTER_Y - gate.y) < reachY) return true;
+  for (let slot = 0; slot < sim.clones; slot++) {
+    if (Math.abs(cloneX(sim, slot) - gate.x) < reachX && Math.abs(cloneY(slot) - gate.y) < reachY) return true;
+  }
+  return false;
+}
+
 /**
- * Gates crush (A29): a gate that reaches the swarm unbroken kills every cat in
- * its way and carries on.
+ * Gates and the swarm.
  *
- * When its front edge reaches the formation, the gate counts the cats standing
- * within its width. Those are its victims. It then kills them one by one as
- * it ploughs through, so the losses are spread over the pass. The cats beside
- * it are untouched, and closing ranks behind it saves nobody.
+ * A31, the rule in force: the swarm collects a gate by touching it. The gate
+ * is used up and the swarm grows on the spot. It hurts nobody.
+ *
+ * A29, kept behind GATES_ARE_SHOT for the item the owner will name later: a
+ * gate that reaches the swarm unbroken kills every cat standing in its way,
+ * one by one as it ploughs through, and carries on. The cats beside it are
+ * untouched, and closing ranks behind it saves nobody.
  */
 function stepGates(sim: SimState): void {
   const enemies = sim.enemies.items;
@@ -124,22 +155,27 @@ function stepGates(sim: SimState): void {
     const gate = enemies[i];
     if (!gate.active || gate.type !== GATE_TYPE) continue;
     const front = gate.y + gate.h / 2;
-    const reach = gate.w / 2 + CAT_RADIUS;
+    const radius = formationRadius(sim.clones);
+    if (front < SHOOTER_Y - radius - CAT_RADIUS) continue;
+
+    if (!GATES_ARE_SHOT) {
+      if (!touchesSwarm(sim, gate)) continue;
+      const clones = rewardAmount(sim, gate.drop > 0 ? gate.drop : rollDrop(sim));
+      addClones(sim, clones);
+      spawnFx(sim, FX_GATE, gate.x, gate.y, clones);
+      poolFree(sim.enemies, i);
+      continue;
+    }
 
     if (gate.swept < 0) {
-      const radius = formationRadius(sim.clones);
-      if (front < SHOOTER_Y - radius - CAT_RADIUS) continue;
-      // It has arrived: count the cats in its way, the shooter included.
-      let victims = Math.abs(sim.shooter.x - gate.x) < reach ? 1 : 0;
-      for (let slot = 0; slot < sim.clones; slot++) {
-        if (Math.abs(cloneX(sim, slot) - gate.x) < reach) victims++;
-      }
+      // It has arrived: the cats in its way are its victims.
+      const victims = catsInWay(sim, gate);
       gate.quota = victims;
       // `contact` holds how far the gate advances between two kills.
       gate.contact = victims > 0 ? (2 * radius + 1) / victims : 0;
       gate.swept = front - gate.contact;
     }
-
+    const reach = gate.w / 2 + CAT_RADIUS;
     while (gate.quota > 0 && front - gate.swept >= gate.contact) {
       gate.swept += gate.contact;
       gate.quota--;
@@ -160,14 +196,14 @@ function stepGates(sim: SimState): void {
 }
 
 /**
- * Contact (D12, as changed by the owner in decisions A18, A28 and A29).
+ * Contact (D12, as changed by the owner in decisions A18 and A28).
  *
  * A rat that touches any cat, clone or shooter, kills it and takes
  * CONTACT_DAMAGE. Every cat has a body: the rat only has to touch its outline.
  * The black shooter is not immune; when it dies the oldest clone is promoted,
  * and with no clone left the level is lost.
  *
- * B7: an enemy 8x8 or larger kills at most BIG_CONTACT_RATE cats per second.
+ * B7: a big enemy kills at most BIG_CONTACT_RATE cats per second.
  */
 export function stepContact(sim: SimState, hash: SpatialHash): void {
   stepGates(sim);

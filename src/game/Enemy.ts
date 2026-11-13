@@ -127,7 +127,7 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
   }
   const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
   if (drop > 0) spawnDrop(sim, drop, e.x, Math.max(0, e.y));
-  spawnFx(sim, FX_KILL, e.x, e.y, e.w);
+  spawnFx(sim, FX_KILL, e.x, e.y, e.w, e.type);
   poolFree(sim.enemies, index);
   sim.kills++;
   return true;

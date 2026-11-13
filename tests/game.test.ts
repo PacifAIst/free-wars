@@ -45,11 +45,11 @@ class FakeView implements GameView {
 }
 
 /** One enemy far up the lane and far from the swarm: the level stays in progress for many seconds. */
-const QUIET_MAP = mapFromRows([...Array.from({ length: 199 }, () => ''), rowWith({ 0: 'E1' })], '1');
+const QUIET_MAP = mapFromRows([...Array.from({ length: 399 }, () => ''), rowWith({ 0: 'E1' })], '1');
 /** One enemy in the line of fire: won within a couple of seconds. */
 const QUICK_WIN = mapFromRows([rowWith({ 22: 'E1' })], '1');
-/** A boss marches down the left of the lane, out of the swarm's reach, and crosses the goal line. */
-const SURE_LOSS = mapFromRows([rowWith({ 0: 'E5' })], '1');
+/** A rat marches down the left of the lane, out of the lone cat's reach, and crosses the goal line. */
+const SURE_LOSS = mapFromRows([rowWith({ 2: 'E1' })], '1');
 
 function source(maps: Record<string, MapData>): MapSource & { loads: string[] } {
   const loads: string[] = [];
@@ -119,7 +119,7 @@ describe('state machine (SPEC section 4)', () => {
     }
     expect(seen).toEqual(['LEVEL_SELECT', 'LOADING', 'LOADING', 'PLAYING', 'PLAYING']);
     expect(game.map).toBe(QUIET_MAP);
-    expect(game.sim.totalRows).toBe(200);
+    expect(game.sim.totalRows).toBe(400);
   });
 
   it('rejects illegal transitions', () => {
@@ -190,7 +190,7 @@ describe('state machine (SPEC section 4)', () => {
     let now = t;
     for (let i = 0; i < 60 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
     expect(game.state).toBe('LOSE');
-    expect(game.sim.lossReason).toBe('boss');
+    expect(game.sim.lossReason).toBe('base');
     input.tap = true;
     for (let i = 0; i < 5; i++) {
       game.frame((now += FRAME_MS));

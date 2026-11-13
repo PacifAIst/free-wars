@@ -29,6 +29,7 @@ import {
   BIG_DRAW_SCALE,
   BIG_HEIGHT_SCALE,
   CAMERA_BACK,
+  CAMERA_FOLLOW,
   CAMERA_GOAL_MARGIN,
   CAMERA_HEIGHT,
   CAMERA_MIN_FOV,
@@ -36,16 +37,13 @@ import {
   CLONE_CAP,
   CLONE_EASE,
   CLONE_EASE_RING_LAG,
-  CLONE_FIRE_RATE_FACTOR,
   COLS,
   ENEMY_STATS,
   ENEMY_TYPE_COUNT,
-  FIRE_RATE,
   GATE_TYPE,
   GATE_WIDTH,
   MARCH_SPEED,
   MAX_RENDER_RESOLUTION,
-  MUZZLE_OFFSET,
   POOL_BULLETS,
   POOL_ENEMIES,
   POOL_POWERUPS,
@@ -70,27 +68,44 @@ import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../game/Player';
 import { cellSpec } from '../parsers/tokens';
 import type { GameState, SimState } from '../types';
 import { Batch } from './Batch';
-import { blobGeometry, bulletGeometry, CAT_BLACK, CAT_WHITE, catGeometry, ratGeometry } from './models';
+import {
+  blobGeometry,
+  bulletGeometry,
+  CAT_BLACK,
+  CAT_WHITE,
+  catGeometry,
+  outlineMaterial,
+  ratGeometry,
+  walkClock,
+  walking,
+} from './models';
 import { Sparks } from './Sparks';
 
 // Lane coordinates map straight onto the 3D world: sim x is world x, sim y is
 // world z (0 = top of the window, 44 = goal line), and world y is up.
 
 /** Segments round a solid: crowd units are drawn by the thousand, big enemies only a few at a time. */
-const CROWD_DETAIL = 7;
+const CROWD_DETAIL = 10;
+/** Width of the dark outline, in model units: about a screen pixel on a phone for crowd units. */
+const CROWD_OUTLINE = 0.032;
+const BIG_OUTLINE = 0.014;
 const BIG_DETAIL = 22;
 const HERO_DETAIL = 18;
+/** Rats that can be in the air at once after being shot. */
+const MAX_TOSSED = 220;
+const TOSS_FIELDS = 8;
+const TOSS_SECONDS = 0.55;
+/** Seconds a muzzle flash and the recoil of a shot last. */
+const SHOT_SECONDS = 0.09;
 /** Instances kept for each big enemy type. */
 const BIG_CAPACITY = 24;
 /** Width of the big-enemy model at scale 1, so a footprint of w cells is filled. */
 const BIG_MODEL_WIDTH = 1.22;
-const LANE_FAR = -110;
+const LANE_FAR = -150;
 const LANE_NEAR = WINDOW_ROWS + 12;
 const SKY = 0x0d1029;
-const CLONE_FIRE_PERIOD = 1 / (FIRE_RATE * CLONE_FIRE_RATE_FACTOR);
-
-/** Hop height of the marching animation, sampled per unit. */
-const HOP = Array.from({ length: 16 }, (_, i) => Math.max(0, Math.sin((i / 16) * Math.PI * 2)));
+/** Height above the lane at which bullets fly: the muzzle of a cat's blaster. */
+const BULLET_HEIGHT = 0.72 * UNIT_DRAW_SCALE;
 
 /** Small seeded generator so the backdrop is the same on every run. */
 function seeded(seed: number): () => number {
@@ -247,6 +262,13 @@ export class Renderer3D implements GameView {
   /** Time each clone joined, for its pop-in. */
   private readonly cloneBorn = new Float32Array(CLONE_CAP);
   private cloneCount = 0;
+  /** Each cat's fire cooldown last frame, and how fresh its last shot is (1 = just fired). Slot 0 is the shooter. */
+  private readonly lastCooldown = new Float32Array(CLONE_CAP + 1);
+  private readonly shotGlow = new Float32Array(CLONE_CAP + 1);
+
+  /** Rats in the air after being shot: type, x, y, z, vx, vy, vz, age. */
+  private readonly tossed = new Float32Array(MAX_TOSSED * TOSS_FIELDS);
+  private tossedCount = 0;
 
   // What the renderer has already reacted to.
   private lastSim: SimState | null = null;
@@ -278,10 +300,20 @@ export class Renderer3D implements GameView {
     // Cats and big enemies use physically based materials, lit by the sun, the sky fill
     // and the environment map. The rat crowd, drawn by the thousand, uses the cheaper
     // Lambert model: on integrated graphics that doubles the frame rate of a full lane.
-    const crowd = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
-    const cats = new MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0, side: DoubleSide });
-    const smooth = new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.04 });
-    const metal = new MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 });
+    const crowd = walking(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }), 13, 1);
+    const cats = walking(
+      new MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0, side: DoubleSide }),
+      7,
+      0.3,
+    );
+    const hero = walking(new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.04 }), 7, 0.3);
+    const smooth = walking(new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.04 }), 6.5, 0.9);
+    const metal = walking(new MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 }), 5, 0.7);
+    // Dark outlines keep every unit distinct in a packed crowd. Each walks with its material.
+    const crowdLine = outlineMaterial(13, 1, CROWD_OUTLINE);
+    const catLine = outlineMaterial(7, 0.3, CROWD_OUTLINE);
+    const smoothLine = outlineMaterial(6.5, 0.9, BIG_OUTLINE);
+    const metalLine = outlineMaterial(5, 0.7, BIG_OUTLINE);
 
     this.rats.push(new Batch(new BoxGeometry(), crowd, 1));
     for (let type = 1; type <= ENEMY_TYPE_COUNT; type++) {
@@ -289,18 +321,19 @@ export class Renderer3D implements GameView {
       const batch = new Batch(
         ratGeometry(type, big ? BIG_DETAIL : CROWD_DETAIL),
         big ? (type === 8 ? metal : smooth) : crowd,
-        big ? BIG_CAPACITY : POOL_ENEMIES + PREVIEW_ROWS * COLS,
+        big ? BIG_CAPACITY : POOL_ENEMIES + PREVIEW_ROWS * COLS + MAX_TOSSED,
         true,
+        big ? (type === 8 ? metalLine : smoothLine) : crowdLine,
       );
       batch.mesh.castShadow = big;
       this.rats.push(batch);
-      this.scene.add(batch.mesh);
+      this.scene.add(batch.mesh, batch.outline!);
     }
 
-    this.clones = new Batch(catGeometry(CAT_WHITE, CROWD_DETAIL), cats, CLONE_CAP);
-    this.hero = new Batch(catGeometry(CAT_BLACK, HERO_DETAIL), smooth, 1);
+    this.clones = new Batch(catGeometry(CAT_WHITE, CROWD_DETAIL), cats, CLONE_CAP, false, catLine);
+    this.hero = new Batch(catGeometry(CAT_BLACK, HERO_DETAIL), hero, 1, false, catLine);
     this.hero.mesh.castShadow = true;
-    this.scene.add(this.clones.mesh, this.hero.mesh);
+    this.scene.add(this.clones.mesh, this.clones.outline!, this.hero.mesh, this.hero.outline!);
 
     this.blobs = new Batch(
       blobGeometry(),
@@ -311,7 +344,7 @@ export class Renderer3D implements GameView {
     this.scene.add(this.blobs.mesh);
 
     this.heroRing = new Mesh(
-      new PlaneGeometry(3.6, 3.6).rotateX(-Math.PI / 2),
+      new PlaneGeometry(1.8 * SHOOTER_DRAW_SCALE, 1.8 * SHOOTER_DRAW_SCALE).rotateX(-Math.PI / 2),
       new MeshBasicMaterial({ map: ringTexture(), transparent: true, depthWrite: false }),
     );
     this.heroRing.position.set(0, 0.06, SHOOTER_Y);
@@ -319,9 +352,9 @@ export class Renderer3D implements GameView {
     this.scene.add(this.heroRing);
 
     // --- projectiles ---
-    this.bulletCores = new Batch(bulletGeometry(0.085, 0.9), new MeshBasicMaterial({ color: 0xfff7c9 }), POOL_BULLETS);
+    this.bulletCores = new Batch(bulletGeometry(0.14, 1.5), new MeshBasicMaterial({ color: 0xfff7c9 }), POOL_BULLETS);
     this.bulletGlows = new Batch(
-      bulletGeometry(0.26, 1.7),
+      bulletGeometry(0.42, 2.8),
       new MeshBasicMaterial({
         color: 0xffa200,
         transparent: true,
@@ -337,8 +370,8 @@ export class Renderer3D implements GameView {
     // --- gates and boxes ---
     // A gate is an upright panel as wide as its rail, leaning back so its label
     // faces the camera. A box is the crate a fat rat drops.
-    const panel = new BoxGeometry(GATE_WIDTH - 0.7, 3.0, 0.7).rotateX(-0.62).translate(0, 1.35, 0);
-    const crate = new BoxGeometry(POWERUP_WIDTH - 1.2, 2.2, 2.6).translate(0, 1.3, 0);
+    const panel = new BoxGeometry(GATE_WIDTH - 1.4, 6.0, 1.3).rotateX(-0.62).translate(0, 2.7, 0);
+    const crate = new BoxGeometry(POWERUP_WIDTH - 2.4, 4.2, 5.0).translate(0, 2.5, 0);
     REWARD_COLORS.forEach(([face, sideColor], i) => {
       const side = new MeshLambertMaterial({ color: sideColor });
       const text = i === MYSTERY ? '?' : `+${CLONE_BOX_AMOUNTS[i]}`;
@@ -368,7 +401,8 @@ export class Renderer3D implements GameView {
   }
 
   cellPx(): number {
-    return this.pxPerGu;
+    // The camera takes back part of every move, so the swarm stays under the finger.
+    return this.pxPerGu * (1 - CAMERA_FOLLOW);
   }
 
   private buildLights(): void {
@@ -381,18 +415,18 @@ export class Renderer3D implements GameView {
 
     this.scene.add(new HemisphereLight(0xe6ecff, 0x2f3570, 0.8));
     const sun = new DirectionalLight(0xfff0d0, 2.6);
-    sun.position.set(COLS / 2 - 46, 90, WINDOW_ROWS / 2 + 70);
+    sun.position.set(COLS / 2 - 60, 120, WINDOW_ROWS / 2 + 90);
     sun.target.position.set(COLS / 2, 0, WINDOW_ROWS / 2);
     sun.castShadow = true;
     sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     // The shadow camera is fitted to the lane and its rails, the only place shadows fall.
     const s = sun.shadow.camera;
-    s.left = -46;
-    s.right = 46;
-    s.top = 74;
-    s.bottom = -66;
+    s.left = -60;
+    s.right = 60;
+    s.top = 110;
+    s.bottom = -100;
     s.near = 1;
-    s.far = 320;
+    s.far = 420;
     sun.shadow.bias = -0.002;
     sun.shadow.normalBias = 0.06;
     this.scene.add(sun, sun.target);
@@ -574,19 +608,23 @@ export class Renderer3D implements GameView {
       this.lastFxId = 0;
       this.lastShots = 0;
       this.cloneCount = 0;
+      this.tossedCount = 0;
+      this.lastCooldown.fill(0);
+      this.shotGlow.fill(0);
       this.sparks.clear();
     }
     this.react(frame, time);
+    walkClock.value = time;
 
     // The camera only ever moves sideways, so its direction never changes.
     this.shake = Math.max(0, this.shake - dt * 3.2);
     const jolt = this.shake * this.shake;
-    this.camera.position.x = x + (Math.random() - 0.5) * jolt * 1.6;
+    this.camera.position.x = COLS / 2 + (x - COLS / 2) * CAMERA_FOLLOW + (Math.random() - 0.5) * jolt * 1.6;
     this.camera.position.y = CAMERA_HEIGHT + (Math.random() - 0.5) * jolt * 1.6;
 
     this.blobs.begin();
     this.drawSwarm(frame, x, time, dt);
-    this.drawEnemies(frame, time);
+    this.drawEnemies(frame, time, dt);
     this.blobs.end();
     this.drawBullets(frame);
     this.drawBoxes(frame, time);
@@ -598,7 +636,7 @@ export class Renderer3D implements GameView {
 
   /** Shows a floating number above a point on the lane. */
   private popup(text: string, x: number, z: number, color: string): void {
-    const p = this.probe.set(x, 2.5, z).project(this.camera);
+    const p = this.probe.set(x, 5, z).project(this.camera);
     this.hud.popup(text, ((p.x + 1) / 2) * this.width, ((1 - p.y) / 2) * this.height, color);
   }
 
@@ -629,19 +667,30 @@ export class Renderer3D implements GameView {
       const { x, y: z } = f;
       switch (f.kind) {
         case FX_HIT:
-          sparks.burst(0, 3, x, 1.0, z, 5, 4, 0.22, 0.7, 0.15, 1.0, 0.85, 0.35, 14);
+          sparks.burst(0, 4, x, 1.8, z, 9, 7, 0.24, 1.2, 0.2, 1.0, 0.85, 0.35, 22);
           if (x < 0 || x > COLS) sfx.gateHit();
           else sfx.hit();
           break;
         case FX_KILL: {
-          const big = f.size >= 8;
-          const n = big ? 34 : 5;
-          const reach = big ? f.size * 0.9 : 3.2;
-          sparks.burst(1, n, x, 0.7, z, reach, big ? 9 : 3.5, big ? 0.9 : 0.42, 0.75, big ? 3.4 : 1.5, 0.62, 0.57, 0.5, 5);
-          sparks.burst(0, big ? 26 : 3, x, 0.9, z, reach * 1.6, big ? 12 : 5, big ? 0.7 : 0.3, 0.6, 0.1, 1.0, 0.6, 0.25, 16);
+          const big = f.tag > 3;
+          const n = big ? 40 : 4;
+          const reach = big ? f.size * 0.9 : 5;
+          sparks.burst(1, n, x, 1.2, z, reach, big ? 12 : 5, big ? 0.9 : 0.45, 1.4, big ? 6 : 2.8, 0.62, 0.57, 0.5, 6);
+          sparks.burst(0, big ? 30 : 3, x, 1.6, z, reach * 1.6, big ? 16 : 8, big ? 0.7 : 0.3, 1.1, 0.15, 1.0, 0.6, 0.25, 24);
           if (big) {
             sparks.emit(0, x, 3, z, 0, 0, 0, 0.3, f.size * 1.4, f.size * 2.6, 1.0, 0.8, 0.5);
             this.shake = Math.max(this.shake, 0.9);
+          } else if (f.tag >= 1 && f.tag <= 3 && this.tossedCount < MAX_TOSSED) {
+            const o = this.tossedCount++ * TOSS_FIELDS;
+            const t = this.tossed;
+            t[o] = f.tag;
+            t[o + 1] = x;
+            t[o + 2] = 0;
+            t[o + 3] = z;
+            t[o + 4] = (Math.random() - 0.5) * 9;
+            t[o + 5] = 13 + Math.random() * 7;
+            t[o + 6] = -(10 + Math.random() * 10);
+            t[o + 7] = 0;
           }
           sfx.kill();
           break;
@@ -653,8 +702,8 @@ export class Renderer3D implements GameView {
           sfx.breach();
           break;
         case FX_CAT:
-          sparks.burst(1, 5, x, 0.8, z, 3, 4, 0.4, 0.7, 1.3, 0.92, 0.95, 1.0, 6);
-          sparks.burst(0, 4, x, 1.0, z, 5, 5, 0.3, 0.6, 0.1, 0.4, 0.7, 1.0, 14);
+          sparks.burst(1, 6, x, 1.5, z, 5, 7, 0.45, 1.3, 2.6, 0.92, 0.95, 1.0, 8);
+          sparks.burst(0, 5, x, 1.8, z, 9, 9, 0.32, 1.1, 0.15, 0.4, 0.7, 1.0, 22);
           this.shake = Math.max(this.shake, 0.3);
           sfx.catLost();
           break;
@@ -669,9 +718,9 @@ export class Renderer3D implements GameView {
         case FX_GATE: {
           const [face, , glow] = REWARD_COLORS[rewardIndex(f.size)];
           // The panel shatters: shards fly out, dust rises, and a flash marks the spot.
-          sparks.burst(0, 46, x, 1.6, z, 13, 14, 0.75, 1.1, 0.2, glow[0], glow[1], glow[2], 22);
-          sparks.burst(1, 12, x, 1.0, z, 5, 5, 0.6, 1.2, 2.6, 0.8, 0.8, 0.9, 4);
-          sparks.emit(0, x, 2, z, 0, 0, 0, 0.32, 5, 15, glow[0], glow[1], glow[2]);
+          sparks.burst(0, 56, x, 3, z, 22, 22, 0.8, 1.9, 0.3, glow[0], glow[1], glow[2], 34);
+          sparks.burst(1, 14, x, 2, z, 8, 8, 0.6, 2.2, 4.6, 0.8, 0.8, 0.9, 5);
+          sparks.emit(0, x, 3, z, 0, 0, 0, 0.34, 9, 26, glow[0], glow[1], glow[2]);
           this.popup(`+${f.size}`, x, z, face);
           this.shake = Math.max(this.shake, 0.55);
           sfx.gateBreak(f.size);
@@ -694,23 +743,33 @@ export class Renderer3D implements GameView {
     this.cloneCount = sim.clones;
   }
 
+  /**
+   * How fresh the last shot of cat `index` is: 1 when it has just fired, falling to 0.
+   * A shot shows as its fire cooldown jumping up, whatever the interval was.
+   */
+  private shotOf(index: number, cooldown: number, dt: number): number {
+    if (cooldown > this.lastCooldown[index] + 1e-4) this.shotGlow[index] = 1;
+    else this.shotGlow[index] = Math.max(0, this.shotGlow[index] - dt / SHOT_SECONDS);
+    this.lastCooldown[index] = cooldown;
+    return this.shotGlow[index];
+  }
+
   private drawSwarm(frame: RenderFrame, x: number, time: number, dt: number): void {
     const { sim } = frame;
     const playing = frame.state === 'PLAYING';
 
-    // The shooter recoils a little with each shot.
-    const sinceShot = 1 / FIRE_RATE - sim.shooter.fireCooldown;
-    const kick = sim.tick > 0 && sinceShot < 0.1 ? 1 - sinceShot / 0.1 : 0;
-    const bob = 1 + 0.03 * Math.sin(time * 7);
+    // The shooter recoils with each shot.
     const s = SHOOTER_DRAW_SCALE;
+    const kick = playing ? this.shotOf(0, sim.shooter.fireCooldown, dt) : 0;
     this.hero.begin();
-    this.hero.add(x, 0, SHOOTER_Y + 0.14 * kick, s, s * bob, s);
+    this.hero.add(x, 0, SHOOTER_Y + 0.12 * s * kick, s, s * (1 - 0.06 * kick), s);
     this.hero.end();
-    this.blobs.add(x + 0.15, 0.02, SHOOTER_Y + 0.12, s, 1, s);
+    this.blobs.add(x + 0.1 * s, 0.02, SHOOTER_Y + 0.08 * s, s, 1, s);
     this.heroRing.position.x = x;
     (this.heroRing.material as MeshBasicMaterial).opacity = 0.7 + 0.3 * Math.sin(time * 3.2);
-    if (playing && kick > 0) {
-      this.sparks.flash(x + 0.5, 1.2, SHOOTER_Y - MUZZLE_OFFSET - 1.1, 1.2 + 1.6 * kick, kick, 0.8 * kick, 0.3 * kick);
+    if (kick > 0) {
+      const size = (0.9 + 1.2 * kick) * s;
+      this.sparks.flash(x + 0.31 * s, 0.72 * s, SHOOTER_Y - 0.95 * s, size, kick, 0.8 * kick, 0.3 * kick);
     }
 
     const u = UNIT_DRAW_SCALE;
@@ -738,27 +797,24 @@ export class Renderer3D implements GameView {
         const t = age / 0.28;
         grow = t * (2 - t) + 0.3 * Math.sin(t * Math.PI);
       }
-      const hurry = Math.min(1, Math.hypot(dx, dz) * 1.4);
-      const hop = hurry * Math.abs(Math.sin(time * 13 + slot * 1.9)) * 0.28;
-      const wobble = 1 + 0.035 * Math.sin(time * 8 + slot * 1.7);
+      const hurry = Math.min(1, Math.hypot(dx, dz) * 0.7);
+      const hop = hurry * Math.abs(Math.sin(time * 13 + slot * 1.9)) * 0.2 * u;
+      const shot = playing ? this.shotOf(slot + 1, cooldowns[slot], dt) : 0;
       const size = u * grow;
-      this.clones.add(cx, hop, cz, size, size * wobble, size);
-      this.blobs.add(cx + 0.12, 0.02, cz + 0.1, size, 1, size);
-
-      const sinceCloneShot = CLONE_FIRE_PERIOD - cooldowns[slot];
-      if (playing && sinceCloneShot < 0.07) {
-        const f = 1 - sinceCloneShot / 0.07;
-        this.sparks.flash(cx + 0.42, 1.0, cz - MUZZLE_OFFSET - 0.8, 0.8 + 1.1 * f, f, 0.8 * f, 0.3 * f);
+      this.clones.add(cx, hop, cz + 0.12 * u * shot, size, size * (1 - 0.06 * shot), size);
+      this.blobs.add(cx + 0.1 * u, 0.02, cz + 0.08 * u, size, 1, size);
+      if (shot > 0) {
+        const flash = (0.7 + 0.9 * shot) * u;
+        this.sparks.flash(cx + 0.31 * u, 0.72 * u, cz - 0.95 * u, flash, shot, 0.8 * shot, 0.3 * shot);
       }
     }
     this.clones.end();
   }
 
-  private drawEnemies(frame: RenderFrame, time: number): void {
+  private drawEnemies(frame: RenderFrame, time: number, dt: number): void {
     const { sim, map, alpha } = frame;
     const { items, high } = sim.enemies;
     const u = UNIT_DRAW_SCALE;
-    const clock = Math.floor(time * 14);
     for (let type = 1; type <= ENEMY_TYPE_COUNT; type++) this.rats[type].begin();
     for (const gate of this.gates) gate.begin();
 
@@ -781,13 +837,14 @@ export class Renderer3D implements GameView {
         for (let c = 0; c < COLS; c++) {
           const type = layout.type[r * COLS + c];
           if (type === 0) continue;
+          const stats = ENEMY_STATS[type];
           if (type <= 3) {
-            const hop = HOP[(clock + r * 5 + c * 3) & 15];
-            this.rats[type].add(c + 0.5, 0.14 * hop * u, front - 0.5, u, u * (1 + 0.05 * hop), u);
+            const px = c + stats.w / 2;
+            const pz = front - stats.h / 2;
+            this.rats[type].add(px, 0, pz, u, u, u);
             this.rats[type].tint(0.62, 0.62, 0.7);
-            this.blobs.add(c + 0.62, 0.02, front - 0.4, u, 1, u);
+            this.blobs.add(px + 0.12 * u, 0.02, pz + 0.1 * u, u, 1, u);
           } else {
-            const stats = ENEMY_STATS[type];
             const size = (stats.w * BIG_DRAW_SCALE) / BIG_MODEL_WIDTH;
             this.rats[type].add(c + stats.w / 2, 0, front - stats.h / 2, size, size * BIG_HEIGHT_SCALE, size);
             this.rats[type].tint(0.62, 0.62, 0.7);
@@ -811,9 +868,8 @@ export class Renderer3D implements GameView {
       }
       const batch = this.rats[e.type];
       if (e.type <= 3) {
-        const hop = HOP[(clock + e.row * 5 + Math.floor(e.x) * 3) & 15];
-        batch.add(ex, 0.14 * hop * u, ez, u, u * (1 + 0.05 * hop), u);
-        this.blobs.add(ex + 0.12, 0.02, ez + 0.1, u, 1, u);
+        batch.add(ex, 0, ez, u, u, u);
+        this.blobs.add(ex + 0.12 * u, 0.02, ez + 0.1 * u, u, 1, u);
       } else {
         // Big enemies stomp: a slow squash and stretch.
         const stomp = Math.sin(time * 5 + e.row);
@@ -821,6 +877,31 @@ export class Renderer3D implements GameView {
         batch.add(ex, 0, ez, size * (1 + 0.02 * stomp), size * BIG_HEIGHT_SCALE * (1 - 0.03 * stomp), size);
       }
       if (e.flash > 0) batch.tint(1.9, 0.75, 0.75);
+    }
+
+    // Rats knocked into the air by the shot that killed them: they fly up the lane,
+    // flip over and shrink away.
+    const t = this.tossed;
+    let n = 0;
+    while (n < this.tossedCount) {
+      const o = n * TOSS_FIELDS;
+      t[o + 7] += dt;
+      if (t[o + 7] >= TOSS_SECONDS) {
+        const last = --this.tossedCount * TOSS_FIELDS;
+        if (last !== o) t.copyWithin(o, last, last + TOSS_FIELDS);
+        continue;
+      }
+      t[o + 5] -= 46 * dt;
+      t[o + 1] += t[o + 4] * dt;
+      t[o + 2] = Math.max(0, t[o + 2] + t[o + 5] * dt);
+      t[o + 3] += t[o + 6] * dt;
+      const life = t[o + 7] / TOSS_SECONDS;
+      const size = u * (1 - 0.55 * life);
+      // Head over heels, backwards, one and a half times.
+      const batch = this.rats[t[o]];
+      batch.addTumbling(t[o + 1], t[o + 2], t[o + 3], size, -life * Math.PI * 3, 0.7);
+      batch.tint(1.5 - life, 0.75 - 0.3 * life, 0.7 - 0.3 * life);
+      n++;
     }
 
     for (let type = 1; type <= ENEMY_TYPE_COUNT; type++) this.rats[type].end();
@@ -835,9 +916,9 @@ export class Renderer3D implements GameView {
       const b = items[i];
       if (!b.active) continue;
       const z = b.prevY + (b.y - b.prevY) * frame.alpha;
-      this.bulletCores.add(b.x, 1.0, z, 1, 1, 1);
+      this.bulletCores.add(b.x, BULLET_HEIGHT, z, 1, 1, 1);
       // The glow trails behind the bullet.
-      this.bulletGlows.add(b.x, 1.0, z + 0.45, 1, 1, 1);
+      this.bulletGlows.add(b.x, BULLET_HEIGHT, z + 0.75, 1, 1, 1);
     }
     this.bulletCores.end();
     this.bulletGlows.end();

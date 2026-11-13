@@ -13,15 +13,28 @@ import {
   PRE_ADVANCE_ROWS,
   SHOOTER_Y,
   SIM_HZ,
+  UNIT,
   WINDOW_ROWS,
 } from '../src/game/constants';
 import { spawnEnemy } from '../src/game/Enemy';
 import { createSim, stepSim } from '../src/game/Sim';
 import { parseMap } from '../src/parsers/markdownMapParser';
 import type { MapData, SimInput, SimState } from '../src/types';
-import { activeEnemies, botInput, createScratch, fullRow, IDLE, LONE, mapFromRows, rowWith, run } from './helpers';
+import {
+  activeEnemies,
+  botInput,
+  createScratch,
+  fullRow,
+  gap,
+  IDLE,
+  LONE,
+  mapFromRows,
+  rowWith,
+  run,
+  UNITS_ACROSS,
+} from './helpers';
 
-/** Shooter starts at x = 22, which is inside column 22 (x from 22 to 23). */
+/** The shooter starts at x = 22. A minion whose token is in column 22 covers x from 22 to 24. */
 const SHOOTER_COL = 22;
 /** Seconds for row 0 to march from its starting place to the goal line. */
 const SECONDS_TO_GOAL = (WINDOW_ROWS - PRE_ADVANCE_ROWS) / MARCH_SPEED;
@@ -35,7 +48,7 @@ function builtIn(id: string): MapData {
 
 describe('shooting', () => {
   it('fires FIRE_RATE bullets per second straight up from the shooter', () => {
-    const map = mapFromRows([rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     run(sim, map, scratch, 1);
@@ -44,12 +57,12 @@ describe('shooting', () => {
     expect(first.x).toBe(sim.shooter.x);
     expect(first.y).toBeLessThan(SHOOTER_Y);
     run(sim, map, scratch, 10 * SIM_HZ - 1);
-    expect(sim.shots).toBeGreaterThanOrEqual(10 * FIRE_RATE);
-    expect(sim.shots).toBeLessThanOrEqual(10 * FIRE_RATE + 1);
+    expect(sim.shots).toBeGreaterThanOrEqual(10 * FIRE_RATE - 3);
+    expect(sim.shots).toBeLessThanOrEqual(10 * FIRE_RATE + 3);
   });
 
   it('moves bullets at BULLET_SPEED and expires them at the top of the window (B3)', () => {
-    const map = mapFromRows([rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     run(sim, map, scratch, 1);
@@ -72,7 +85,7 @@ describe('shooting', () => {
   });
 
   it('follows the shooter when the map slides', () => {
-    const map = mapFromRows([rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     stepSim(sim, map, { targetDelta: 8, keyDir: 0 }, scratch);
@@ -119,8 +132,8 @@ describe('shooting', () => {
   });
 
   it('only hits enemies in the column of fire', () => {
-    // The rat in column 19 is beside the line of fire at x = 22, and still far up the lane.
-    const map = mapFromRows([rowWith({ [SHOOTER_COL - 3]: 'E1' })]);
+    // The rat in columns 18-19 is beside the line of fire at x = 22, and still far up the lane.
+    const map = mapFromRows([rowWith({ [SHOOTER_COL - 4]: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     run(sim, map, createScratch(), 2 * SIM_HZ);
     expect(sim.kills).toBe(0);
@@ -135,10 +148,11 @@ describe('shooting', () => {
   });
 
   it('one bullet damages one enemy', () => {
-    const map = mapFromRows(Array.from({ length: 6 }, () => rowWith({ [SHOOTER_COL]: 'E1' })));
+    const map = mapFromRows(Array.from({ length: 6 * UNIT }, () => rowWith({ [SHOOTER_COL]: 'E1' })));
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
-    while (sim.kills === 0) run(sim, map, scratch, 1);
+    expect(sim.enemies.live).toBe(6);
+    while (sim.kills === 0 && sim.tick < 5 * SIM_HZ) run(sim, map, scratch, 1);
     expect(sim.kills).toBe(1);
     expect(sim.enemies.live).toBe(5);
   });
@@ -150,11 +164,11 @@ describe('goal line (B1 with the owner rule A18)', () => {
   });
 
   it('loses the level when the first enemy crosses it', () => {
-    const map = mapFromRows([...Array.from({ length: 60 }, () => ''), rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1);
     const scratch = createScratch();
     // Two rats that have already got past the swarm, one a little ahead of the other.
-    spawnEnemy(sim, 1, 5, 0, SHOOTER_Y + 4, 0, 0);
+    spawnEnemy(sim, 1, 4, 0, SHOOTER_Y + 4, 0, 0);
     spawnEnemy(sim, 3, 30, 0, SHOOTER_Y + 2, 0, 0);
     while (sim.phase === 'playing' && sim.tick < 10 * SIM_HZ) {
       for (const e of activeEnemies(sim)) expect(e.y + e.h / 2).toBeLessThan(WINDOW_ROWS);
@@ -163,8 +177,8 @@ describe('goal line (B1 with the owner rule A18)', () => {
     expect(sim.phase).toBe('lost');
     expect(sim.lossReason).toBe('base');
     expect(sim.baseHp).toBe(0);
-    // It took the first rat the march time for the remaining 4 rows.
-    expect(sim.tick / SIM_HZ).toBeCloseTo(4 / MARCH_SPEED, 1);
+    // It took the first rat the march time for the rows that were left.
+    expect(sim.tick / SIM_HZ).toBeCloseTo((WINDOW_ROWS - SHOOTER_Y - 4) / MARCH_SPEED, 1);
     // The rat that crossed is removed; the second one had not arrived yet.
     expect(sim.enemies.live).toBe(1);
     expect(activeEnemies(sim)[0].type).toBe(3);
@@ -172,15 +186,15 @@ describe('goal line (B1 with the owner rule A18)', () => {
 
   it('a rat marching straight needs the documented time to reach the line', () => {
     expect(SECONDS_TO_GOAL).toBeCloseTo((WINDOW_ROWS - PRE_ADVANCE_ROWS) / MARCH_SPEED, 9);
-    expect(SECONDS_TO_GOAL).toBeGreaterThan(10);
+    expect(SECONDS_TO_GOAL).toBeGreaterThan(4);
     expect(SECONDS_TO_GOAL).toBeLessThan(25);
   });
 
   it('reports a boss crossing as its own reason', () => {
-    const map = mapFromRows([...Array.from({ length: 60 }, () => ''), rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
-    // A boss whose front edge is a step from the goal line, away from the shooter.
-    spawnEnemy(sim, 5, 24, 0, WINDOW_ROWS - 0.01, 0, 0);
+    // A boss whose front edge is a step from the goal line.
+    spawnEnemy(sim, 5, 4, 0, WINDOW_ROWS - 0.01, 0, 0);
     run(sim, map, createScratch(), 1);
     expect(sim.phase).toBe('lost');
     expect(sim.lossReason).toBe('boss');
@@ -189,23 +203,24 @@ describe('goal line (B1 with the owner rule A18)', () => {
 
 describe('win condition (D5)', () => {
   it('needs the end of the file and no enemy alive', () => {
-    const rows = Array.from({ length: 30 }, () => rowWith({ [SHOOTER_COL]: 'E1' }));
+    // Twelve ranks, far enough apart for the lone cat to keep up.
+    const rows = Array.from({ length: 12 * 4 * UNIT }, (_, i) => (i % (4 * UNIT) === 0 ? rowWith({ [SHOOTER_COL]: 'E1' }) : ''));
     const map = mapFromRows(rows);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     while (sim.phase === 'playing' && sim.tick < 120 * SIM_HZ) {
       run(sim, map, scratch, 1);
       if ((sim.phase as string) === 'won') {
-        expect(sim.nextRow).toBe(30);
+        expect(sim.nextRow).toBe(map.rows);
         expect(sim.enemies.live).toBe(0);
       }
     }
     expect(sim.phase).toBe('won');
-    expect(sim.kills).toBe(30);
+    expect(sim.kills).toBe(12);
   });
 
   it('does not win while rows are still to come', () => {
-    const rows = [rowWith({ [SHOOTER_COL]: 'E1' }), ...Array.from({ length: 70 }, () => ''), rowWith({ 0: 'E1' })];
+    const rows = [rowWith({ [SHOOTER_COL]: 'E1' }), ...gap(300), rowWith({ 0: 'E1' })];
     const map = mapFromRows(rows);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
@@ -295,8 +310,8 @@ describe('scale (M3 check)', () => {
     expect(sim.enemies.items).toHaveLength(POOL_ENEMIES);
     expect(sim.bullets.items).toHaveLength(POOL_BULLETS);
     expect(sim.fx.items).toHaveLength(POOL_PARTICLES);
-    expect(sim.enemies.live).toBeLessThanOrEqual((WINDOW_ROWS + 1) * COLS);
-    expect(sim.enemies.live).toBeGreaterThan(22 * COLS);
+    expect(sim.enemies.live).toBeLessThanOrEqual((WINDOW_ROWS / UNIT + 2) * UNITS_ACROSS);
+    expect(sim.enemies.live).toBeGreaterThan(40 * UNITS_ACROSS);
     // A tick must fit many times into the 16.7 ms frame, even on a slow machine.
     expect(msPerTick).toBeLessThan(4);
   });

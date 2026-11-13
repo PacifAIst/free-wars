@@ -95,6 +95,8 @@ export interface Fx {
   age: number;
   life: number;
   size: number;
+  /** Extra detail for the renderer: the type of the enemy that died. */
+  tag: number;
 }
 
 export type SimPhase = 'playing' | 'won' | 'lost';

@@ -3,6 +3,7 @@ import {
   BIG_ENEMY_MIN_TYPE,
   COLS,
   GATE_TYPE,
+  GATES_ARE_SHOT,
   HASH_BUCKET,
   MAX_ENEMY_SIZE,
   MINION_SPACING,
@@ -15,7 +16,8 @@ import {
  * Uniform spatial hash over the enemies, rebuilt every tick (PLAN section 4).
  * Buckets are HASH_BUCKET gu square. An enemy is listed in every bucket its
  * footprint touches, so a 30x30 boss and a 1x1 minion are found the same way.
- * It covers the lane and the rail on each side of it.
+ * It covers the lane and the rail on each side of it. Gates are only listed
+ * when they can be shot (A31); otherwise bullets fly straight through them.
  *
  * This is scratch data: it is derived from the sim state and never serialised.
  * All arrays are allocated once.
@@ -61,7 +63,7 @@ export class SpatialHash {
     let total = 0;
     for (let i = 0; i < high; i++) {
       const e = items[i];
-      if (!e.active) continue;
+      if (!e.active || (e.type === GATE_TYPE && !GATES_ARE_SHOT)) continue;
       const x0 = this.bx(e.x - e.w / 2);
       const x1 = this.bx(e.x + e.w / 2 - 1e-9);
       const y0 = this.by(e.y - e.h / 2);
@@ -84,7 +86,7 @@ export class SpatialHash {
     const entries = this.entries;
     for (let i = 0; i < high; i++) {
       const e = items[i];
-      if (!e.active) continue;
+      if (!e.active || (e.type === GATE_TYPE && !GATES_ARE_SHOT)) continue;
       const x0 = this.bx(e.x - e.w / 2);
       const x1 = this.bx(e.x + e.w / 2 - 1e-9);
       const y0 = this.by(e.y - e.h / 2);

@@ -8,22 +8,39 @@ import {
 
 /**
  * One instanced mesh with a fixed number of slots, filled from scratch every
- * frame. Instances are only ever scaled and moved, never rotated, so the
- * matrix is written directly. Nothing is allocated per frame.
+ * frame. Instances are only ever scaled and moved, never rotated (but for
+ * the tumble of `addTumbling`), so the matrix is written directly. Nothing is allocated per frame.
  */
 export class Batch {
   readonly mesh: InstancedMesh;
+  /** The same instances drawn again as a dark hull, when the batch was given an outline material. */
+  readonly outline: InstancedMesh | null;
   private readonly matrices: Float32Array;
   private readonly colors: Float32Array | null;
   private readonly capacity: number;
   private count = 0;
 
-  constructor(geometry: BufferGeometry, material: Material | Material[], capacity: number, tinted = false) {
+  constructor(
+    geometry: BufferGeometry,
+    material: Material | Material[],
+    capacity: number,
+    tinted = false,
+    outline: Material | null = null,
+  ) {
     this.capacity = capacity;
     this.mesh = new InstancedMesh(geometry, material, capacity);
     this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
+    if (outline) {
+      this.outline = new InstancedMesh(geometry, outline, capacity);
+      // One buffer of matrices serves both meshes.
+      this.outline.instanceMatrix = this.mesh.instanceMatrix;
+      this.outline.frustumCulled = false;
+      this.outline.count = 0;
+    } else {
+      this.outline = null;
+    }
     this.matrices = this.mesh.instanceMatrix.array as Float32Array;
     this.matrices.fill(0);
     if (tinted) {
@@ -46,6 +63,8 @@ export class Batch {
     const m = this.matrices;
     m[o] = sx;
     m[o + 5] = sy;
+    m[o + 6] = 0;
+    m[o + 9] = 0;
     m[o + 10] = sz;
     m[o + 12] = x;
     m[o + 13] = y;
@@ -61,6 +80,25 @@ export class Batch {
     return true;
   }
 
+  /**
+   * Adds an instance of size `s` turned head over heels by `angle` radians about a point
+   * `pivot` model units above its base.
+   */
+  addTumbling(x: number, y: number, z: number, s: number, angle: number, pivot: number): boolean {
+    if (!this.add(x, y, z, s, s, s)) return false;
+    const o = (this.count - 1) * 16;
+    const m = this.matrices;
+    const c = Math.cos(angle) * s;
+    const n = Math.sin(angle) * s;
+    m[o + 5] = c;
+    m[o + 6] = n;
+    m[o + 9] = -n;
+    m[o + 10] = c;
+    m[o + 13] = y + pivot * (s - c);
+    m[o + 14] = z - pivot * n;
+    return true;
+  }
+
   /** Colours the instance added last. Only for batches created with `tinted`. */
   tint(r: number, g: number, b: number): void {
     if (!this.colors || this.count === 0) return;
@@ -73,6 +111,7 @@ export class Batch {
   end(): void {
     const { mesh } = this;
     mesh.count = this.count;
+    if (this.outline) this.outline.count = this.count;
     mesh.instanceMatrix.clearUpdateRanges();
     mesh.instanceMatrix.addUpdateRange(0, this.count * 16);
     mesh.instanceMatrix.needsUpdate = true;

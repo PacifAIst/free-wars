@@ -26,11 +26,11 @@ const LIFE: readonly number[] = [
 ];
 
 export function makeFx(): Fx {
-  return { active: false, id: 0, kind: 0, x: 0, y: 0, age: 0, life: 0, size: 0 };
+  return { active: false, id: 0, kind: 0, x: 0, y: 0, age: 0, life: 0, size: 0, tag: 0 };
 }
 
 /** Starts an effect. Silently does nothing when the pool is full. */
-export function spawnFx(sim: SimState, kind: number, x: number, y: number, size: number): void {
+export function spawnFx(sim: SimState, kind: number, x: number, y: number, size: number, tag = 0): void {
   const index = poolAlloc(sim.fx);
   if (index < 0) return;
   const fx = sim.fx.items[index];
@@ -41,6 +41,7 @@ export function spawnFx(sim: SimState, kind: number, x: number, y: number, size:
   fx.age = 0;
   fx.life = LIFE[kind];
   fx.size = size;
+  fx.tag = tag;
 }
 
 export function stepFx(sim: SimState): void {

@@ -1,7 +1,7 @@
 # FREE-WARS
 
 A 3D fixed-shooter crowd game for the browser. A black cat and its clone swarm hold a 44-column lane
-against a marching army of rats. Drag to slide the map; the swarm fires on its own.
+against a marching army of rats. Drag to move the swarm; it fires on its own.
 
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
@@ -9,7 +9,7 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 ## Play
 
 - Drag left or right: the swarm follows your finger and fires on its own. You start with one black cat.
-- Powerups ride the rails on both sides of the lane. Step onto a rail and shoot a panel until it breaks: the swarm grows at once (+1, +3, +10, +50). A panel you fail to break kills every cat in its way.
+- Powerups ride the rails on both sides of the lane. Step onto a rail and let a panel reach you: the swarm grows at once (+1, +3, +10, +50).
 - Fat rats drop a box when they die; catch it for more cats.
 - Rats march straight for the goal. Going to a rail leaves the lane open, so choose.
 - M mutes the sound.

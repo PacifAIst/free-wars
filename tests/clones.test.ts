@@ -10,11 +10,15 @@ import {
   DROP_CLONE_50,
   DROP_MINIGUN,
   DROP_TANK,
+  ENEMY_STATS,
   FIRE_RATE,
   POWERUP_SPEED,
+  POWERUP_WIDTH,
+  RING_SPACING,
   SHOOTER_Y,
   SIM_HZ,
   START_CLONES,
+  UNIT,
   WINDOW_ROWS,
 } from '../src/game/constants';
 import { spawnEnemy } from '../src/game/Enemy';
@@ -22,14 +26,14 @@ import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../src/game/Player';
 import { isCloneBox, rollDrop, spawnDrop } from '../src/game/Powerup';
 import { createSim } from '../src/game/Sim';
 import type { SimState } from '../src/types';
-import { createScratch, LONE, mapFromRows, rowWith, run } from './helpers';
+import { createScratch, gap, LONE, mapFromRows, rowWith, run } from './helpers';
 
-/** One rat far up the lane, so the level stays in progress while a test sets things up. */
-const FAR = mapFromRows([...Array.from({ length: 60 }, () => ''), rowWith({ 0: 'E1' })]);
+/** One rat far up the file, so the level stays in progress while a test sets things up. */
+const FAR = mapFromRows([...gap(400), rowWith({ 0: 'E1' })]);
 
-/** Puts an enemy with its centre on (x, y) and resolves contact once. */
+/** Puts an enemy with its centre on (x, y), as nearly as the grid allows, and resolves contact once. */
 function touch(sim: SimState, type: number, x: number, y: number, hp = 0): void {
-  const { w, h } = { w: [0, 1, 1, 1, 8, 20, 20, 20, 30][type], h: [0, 1, 1, 1, 8, 20, 20, 20, 30][type] };
+  const { w, h } = ENEMY_STATS[type];
   spawnEnemy(sim, type, Math.round(x - w / 2), 0, y + h / 2, hp, 0);
   const scratch = createScratch();
   scratch.hash.build(sim.enemies);
@@ -42,23 +46,27 @@ describe('formation (D8, SPEC 6.2)', () => {
     expect(SLOT_Y).toHaveLength(CLONE_CAP);
   });
 
+  it('cats are twice their first size: rings are RING_SPACING apart (A31)', () => {
+    expect(RING_SPACING).toBe(UNIT);
+  });
+
   it('fills ring 1 clockwise from 12 o clock, 60 degrees apart', () => {
     // Slot 0 is straight up the lane from the shooter (y grows towards the goal line).
     expect(SLOT_X[0]).toBeCloseTo(0, 9);
-    expect(SLOT_Y[0]).toBeCloseTo(-1, 9);
+    expect(SLOT_Y[0]).toBeCloseTo(-RING_SPACING, 9);
     // Slot 1 is up and to the right: clockwise as the player sees it.
-    expect(SLOT_X[1]).toBeCloseTo(Math.sin(Math.PI / 3), 9);
-    expect(SLOT_Y[1]).toBeCloseTo(-0.5, 9);
+    expect(SLOT_X[1]).toBeCloseTo(Math.sin(Math.PI / 3) * RING_SPACING, 9);
+    expect(SLOT_Y[1]).toBeCloseTo(-0.5 * RING_SPACING, 9);
     expect(SLOT_X[3]).toBeCloseTo(0, 9);
-    expect(SLOT_Y[3]).toBeCloseTo(1, 9);
-    for (let i = 0; i < 6; i++) expect(Math.hypot(SLOT_X[i], SLOT_Y[i])).toBeCloseTo(1, 9);
+    expect(SLOT_Y[3]).toBeCloseTo(RING_SPACING, 9);
+    for (let i = 0; i < 6; i++) expect(Math.hypot(SLOT_X[i], SLOT_Y[i])).toBeCloseTo(RING_SPACING, 9);
   });
 
-  it('moves out to ring 2 at the 7th clone, with 12 slots at radius 2', () => {
+  it('moves out to ring 2 at the 7th clone, with 12 slots', () => {
     expect(SLOT_X[6]).toBeCloseTo(0, 9);
-    expect(SLOT_Y[6]).toBeCloseTo(-2, 9);
-    for (let i = 6; i < 18; i++) expect(Math.hypot(SLOT_X[i], SLOT_Y[i])).toBeCloseTo(2, 9);
-    expect(Math.hypot(SLOT_X[18], SLOT_Y[18])).toBeCloseTo(3, 9);
+    expect(SLOT_Y[6]).toBeCloseTo(-2 * RING_SPACING, 9);
+    for (let i = 6; i < 18; i++) expect(Math.hypot(SLOT_X[i], SLOT_Y[i])).toBeCloseTo(2 * RING_SPACING, 9);
+    expect(Math.hypot(SLOT_X[18], SLOT_Y[18])).toBeCloseTo(3 * RING_SPACING, 9);
   });
 
   it('holds 100 clones in six rings, the last one partly filled', () => {
@@ -69,15 +77,15 @@ describe('formation (D8, SPEC 6.2)', () => {
     expect(ringsFor(18)).toBe(2);
     expect(ringsFor(90)).toBe(5);
     expect(ringsFor(100)).toBe(6);
-    expect(Math.hypot(SLOT_X[99], SLOT_Y[99])).toBeCloseTo(6, 9);
-    expect(formationRadius(100)).toBe(6);
+    expect(Math.hypot(SLOT_X[99], SLOT_Y[99])).toBeCloseTo(6 * RING_SPACING, 9);
+    expect(formationRadius(100)).toBe(6 * RING_SPACING);
     // The whole formation stays above the goal line.
     for (let i = 0; i < CLONE_CAP; i++) expect(cloneY(i)).toBeLessThan(WINDOW_ROWS);
   });
 
-  it('keeps neighbours about a cell apart', () => {
+  it('keeps neighbours about one cat apart', () => {
     for (let i = 1; i < 6; i++) {
-      expect(Math.hypot(SLOT_X[i] - SLOT_X[i - 1], SLOT_Y[i] - SLOT_Y[i - 1])).toBeCloseTo(1, 6);
+      expect(Math.hypot(SLOT_X[i] - SLOT_X[i - 1], SLOT_Y[i] - SLOT_Y[i - 1])).toBeCloseTo(RING_SPACING, 6);
     }
   });
 
@@ -89,11 +97,11 @@ describe('formation (D8, SPEC 6.2)', () => {
     expect(ringsFor(sim.clones)).toBe(1);
   });
 
-  it('squeezes slots that would leave the lane inward (D2)', () => {
+  it('squeezes slots that would pass the outer wall inward (D2)', () => {
     const sim = createSim(FAR, 1, { startClones: 60 });
     const scratch = createScratch();
-    run(sim, FAR, scratch, 1, { targetDelta: 40, keyDir: 0 });
-    run(sim, FAR, scratch, 2 * SIM_HZ);
+    run(sim, FAR, scratch, 1, { targetDelta: 60, keyDir: 0 });
+    run(sim, FAR, scratch, 3 * SIM_HZ);
     expect(sim.shooter.x).toBeCloseTo(SHOOTER_MAX_X, 2);
     for (let i = 0; i < sim.clones; i++) {
       expect(cloneX(sim, i)).toBeLessThanOrEqual(SHOOTER_MAX_X);
@@ -105,9 +113,10 @@ describe('formation (D8, SPEC 6.2)', () => {
 });
 
 describe('clones (SPEC 6.2, B2)', () => {
-  it('starts each level with START_CLONES clones', () => {
+  it('starts each level with START_CLONES clones: the black cat is alone (A28)', () => {
+    expect(START_CLONES).toBe(0);
     expect(createSim(FAR, 1).clones).toBe(START_CLONES);
-    expect(createSim(FAR, 1, LONE).clones).toBe(0);
+    expect(createSim(FAR, 1, { startClones: 4 }).clones).toBe(4);
   });
 
   it('caps the swarm at 100 and discards the rest', () => {
@@ -119,32 +128,67 @@ describe('clones (SPEC 6.2, B2)', () => {
     expect(sim.cloneCooldowns).toHaveLength(CLONE_CAP);
   });
 
-  it('each clone fires at half the shooter rate, from its own slot', () => {
+  it('each clone fires at half the shooter rate on average, from its own slot', () => {
     const sim = createSim(FAR, 1, { startClones: 10 });
     const scratch = createScratch();
     run(sim, FAR, scratch, 10 * SIM_HZ);
-    const shooterShots = 10 * FIRE_RATE;
-    const cloneShots = 10 * 10 * FIRE_RATE * CLONE_FIRE_RATE_FACTOR;
-    expect(sim.shots).toBeGreaterThanOrEqual(shooterShots + cloneShots - 10);
-    expect(sim.shots).toBeLessThanOrEqual(shooterShots + cloneShots + 11);
+    const expected = 10 * FIRE_RATE + 10 * 10 * FIRE_RATE * CLONE_FIRE_RATE_FACTOR;
+    expect(sim.shots).toBeGreaterThan(expected * 0.88);
+    expect(sim.shots).toBeLessThan(expected * 1.12);
     const columns = new Set(sim.bullets.items.filter((b) => b.active).map((b) => b.x.toFixed(3)));
     expect(columns.size).toBeGreaterThan(5);
   });
+});
 
-  it('staggers the clones so they do not fire as one volley', () => {
-    const sim = createSim(FAR, 1, { startClones: 30 });
+describe('fire timing (A31): no two cats keep the same beat', () => {
+  /** Tick numbers at which the shot counter went up. */
+  function shotTicks(sim: SimState, seconds: number): number[] {
     const scratch = createScratch();
-    let busiest = 0;
-    for (let i = 0; i < 2 * SIM_HZ; i++) {
+    const ticks: number[] = [];
+    for (let i = 0; i < seconds * SIM_HZ; i++) {
       const before = sim.shots;
       run(sim, FAR, scratch, 1);
-      busiest = Math.max(busiest, sim.shots - before);
+      for (let n = before; n < sim.shots; n++) ticks.push(sim.tick);
     }
-    expect(busiest).toBeLessThan(10);
+    return ticks;
+  }
+
+  it('the shooter varies the time between its shots', () => {
+    const ticks = shotTicks(createSim(FAR, 1, LONE), 12);
+    const waits = ticks.slice(1).map((t, i) => t - ticks[i]);
+    expect(new Set(waits).size).toBeGreaterThan(4);
+    const mean = waits.reduce((a, b) => a + b, 0) / waits.length;
+    expect(mean / SIM_HZ).toBeCloseTo(1 / FIRE_RATE, 1);
+  });
+
+  it('the swarm never fires as one volley', () => {
+    const sim = createSim(FAR, 1, { startClones: 60 });
+    const ticks = shotTicks(sim, 6);
+    const perTick = new Map<number, number>();
+    for (const t of ticks) perTick.set(t, (perTick.get(t) ?? 0) + 1);
+    // 62 shots a second over 60 ticks: about one per tick. A volley would be 61 at once.
+    expect(Math.max(...perTick.values())).toBeLessThanOrEqual(10);
+  });
+
+  it('the pattern of shots does not repeat from one second to the next', () => {
+    const sim = createSim(FAR, 1, { startClones: 30 });
+    const ticks = shotTicks(sim, 8);
+    const second = (n: number): string =>
+      Array.from({ length: SIM_HZ }, (_, i) => ticks.filter((t) => t === n * SIM_HZ + i + 1).length).join('');
+    expect(second(3)).not.toBe(second(4));
+    expect(second(4)).not.toBe(second(5));
+    expect(second(5)).not.toBe(second(6));
+  });
+
+  it('clones that join together do not start on the same beat', () => {
+    const sim = createSim(FAR, 1, LONE);
+    addClones(sim, 10);
+    const starts = new Set(sim.cloneCooldowns.slice(0, 10).map((c) => c.toFixed(3)));
+    expect(starts.size).toBe(10);
   });
 });
 
-describe('contact trades (D12 as changed by A18)', () => {
+describe('contact trades (D12 as changed by A18 and A28)', () => {
   it('a rat that touches a clone kills it and dies itself', () => {
     const sim = createSim(FAR, 1, { startClones: 1 });
     touch(sim, 1, cloneX(sim, 0), cloneY(0));
@@ -182,20 +226,21 @@ describe('contact trades (D12 as changed by A18)', () => {
 
   it('when the shooter is hit, a clone is promoted and play goes on', () => {
     const sim = createSim(FAR, 1, { startClones: 3 });
-    touch(sim, 1, sim.shooter.x, SHOOTER_Y);
+    // A rat right behind the shooter touches it and none of the clones in front.
+    touch(sim, 3, sim.shooter.x, SHOOTER_Y + UNIT, 1);
     expect(sim.phase).toBe('playing');
     expect(sim.clones).toBe(2);
   });
 
   it('cats that are not touched are safe', () => {
     const sim = createSim(FAR, 1, { startClones: 6 });
-    touch(sim, 1, sim.shooter.x + 5, SHOOTER_Y);
+    touch(sim, 1, sim.shooter.x + 10, SHOOTER_Y);
     expect(sim.clones).toBe(6);
     expect(sim.kills).toBe(0);
   });
 
   it('a big enemy kills at most BIG_CONTACT_RATE cats per second (B7)', () => {
-    const map = mapFromRows([rowWith({ 18: 'E4-100000' })]);
+    const map = mapFromRows([rowWith({ 14: 'E4-100000' }), ...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, { startClones: 60 });
     const scratch = createScratch();
     while (sim.clones === 60 && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
@@ -207,15 +252,15 @@ describe('contact trades (D12 as changed by A18)', () => {
   });
 });
 
-describe('clone boxes (B4, B8, B9)', () => {
+describe('boxes dropped by fat rats (B4, B8, B9)', () => {
   it('an authored drop falls from where the enemy died, faster than the march', () => {
-    const map = mapFromRows([rowWith({ 22: 'E1-P3' }), ...Array.from({ length: 40 }, () => ''), rowWith({ 0: 'E1' })]);
+    const map = mapFromRows([rowWith({ 22: 'E1-P3' }), ...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     while (sim.powerups.live === 0 && sim.tick < 5 * SIM_HZ) run(sim, map, scratch, 1);
     const box = sim.powerups.items.find((p) => p.active)!;
     expect(box.kind).toBe(DROP_CLONE_10);
-    expect(box.x).toBeCloseTo(22.5, 1);
+    expect(box.x).toBe(23);
     const y = box.y;
     run(sim, map, scratch, 30);
     expect(box.y - y).toBeCloseTo(POWERUP_SPEED * 0.5, 6);
@@ -228,7 +273,7 @@ describe('clone boxes (B4, B8, B9)', () => {
       ['E1-P3', 10],
       ['E1-P4', 50],
     ] as const) {
-      const map = mapFromRows([rowWith({ 22: token }), ...Array.from({ length: 40 }, () => ''), rowWith({ 0: 'E1' })]);
+      const map = mapFromRows([rowWith({ 22: token }), ...gap(400), rowWith({ 0: 'E1' })]);
       const sim = createSim(map, 1, LONE);
       const scratch = createScratch();
       while (sim.clones === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
@@ -241,22 +286,23 @@ describe('clone boxes (B4, B8, B9)', () => {
   it('is lost if it reaches the goal line away from the swarm', () => {
     const sim = createSim(FAR, 1, LONE);
     const scratch = createScratch();
-    spawnDrop(sim, DROP_CLONE_10, 5, WINDOW_ROWS - 12);
+    spawnDrop(sim, DROP_CLONE_10, 2, WINDOW_ROWS - 20);
     run(sim, FAR, scratch, 3 * SIM_HZ);
     expect(sim.powerups.live).toBe(0);
     expect(sim.clones).toBe(0);
   });
 
   it('reaches further as the swarm grows (B9)', () => {
+    // Out of a lone shooter's reach, which is half the width of a box; within a four-ring swarm's.
+    const offset = POWERUP_WIDTH / 2 + 2 * RING_SPACING;
     const sim = createSim(FAR, 1, { startClones: 40 });
     const scratch = createScratch();
-    // Seven cells to the side: out of a lone shooter's reach, within a four-ring swarm's.
-    spawnDrop(sim, DROP_CLONE_1, sim.shooter.x + 7, SHOOTER_Y - 0.5);
+    spawnDrop(sim, DROP_CLONE_1, sim.shooter.x + offset, SHOOTER_Y - 0.5);
     run(sim, FAR, scratch, 2);
     expect(sim.clones).toBe(41);
 
     const lone = createSim(FAR, 1, LONE);
-    spawnDrop(lone, DROP_CLONE_1, lone.shooter.x + 7, SHOOTER_Y - 0.5);
+    spawnDrop(lone, DROP_CLONE_1, lone.shooter.x + offset, SHOOTER_Y - 0.5);
     run(lone, FAR, scratch, 2);
     expect(lone.clones).toBe(0);
   });
@@ -288,8 +334,8 @@ describe('clone boxes (B4, B8, B9)', () => {
     expect(isCloneBox(DROP_CLONE_1)).toBe(true);
     expect(isCloneBox(DROP_CLONE_50)).toBe(true);
     expect(isCloneBox(DROP_MINIGUN)).toBe(false);
-    spawnDrop(sim, DROP_MINIGUN, 10, 10);
-    spawnDrop(sim, DROP_CLONE_10, 12, 10);
+    spawnDrop(sim, DROP_MINIGUN, 2, 10);
+    spawnDrop(sim, DROP_CLONE_10, 4, 10);
     expect(sim.powerups.live).toBe(2);
     const kinds = sim.powerups.items.filter((p) => p.active).map((p) => p.kind);
     expect(isCloneBox(kinds[0])).toBe(true);

@@ -5,13 +5,17 @@ import { cellHash } from './rng';
 
 /**
  * Where everything in a map actually stands, after footprints are taken into
- * account (decision A21). Enemies never overlap: a big enemy claims every cell
- * of its footprint, and nothing else may stand there.
+ * account (decisions A21 and A31). Enemies never overlap: each one claims every
+ * cell of its footprint, and nothing else may stand there.
  *
- *  - A big enemy keeps the cell of its token as the front-left corner of its
- *    footprint (D11). If that span is taken, or would leave the lane, it moves
- *    to the nearest free span in the same row; if the row has none it is left out.
- *  - A minion whose cell is already claimed is left out.
+ *  - The cell of a token is the front-left corner of the enemy's footprint
+ *    (D11); the body extends to the right and behind it, up the lane.
+ *  - A big enemy (E4-E8) whose span is taken, or would leave the lane, moves to
+ *    the nearest free span in the same row; if the row has none it is left out.
+ *  - A minion covers 2 by 2 cells. One whose cells are already claimed is left
+ *    out. So a row of the grid filled from edge to edge gives 22 minions, and
+ *    the row behind it gives none: maps written cell by cell still work, with
+ *    half the units across and half along.
  *  - A gate token does not stand in the lane at all. A token in one of the left
  *    edge columns puts a gate on the left rail for that row, and likewise on
  *    the right (decision A29). One gate per rail and row.
@@ -54,28 +58,29 @@ function resolve(map: MapData, seed: number): MapLayout {
     for (let c = left; c < left + width; c++) if (freeFrom[c] > row) return false;
     return true;
   };
+  const claim = (row: number, left: number, token: number, t: number): void => {
+    const { w, h } = ENEMY_STATS[t];
+    type[row * COLS + left] = t;
+    source[row * COLS + left] = token;
+    for (let k = left; k < left + w; k++) freeFrom[k] = row + h;
+  };
 
   for (let r = 0; r < map.rows; r++) {
     const base = r * COLS;
 
-    // Big enemies first: they claim their whole footprint.
+    // Big enemies first: they take priority and may move sideways to fit.
     for (let c = 0; c < COLS; c++) {
       const t = enemyTypeAt(map, seed, r, c);
       if (t < BIG_ENEMY_MIN_TYPE) continue;
-      const { w, h } = ENEMY_STATS[t];
+      const { w } = ENEMY_STATS[t];
       const wanted = Math.min(c, COLS - w);
       let left = -1;
       for (let shift = 0; shift <= COLS - w && left < 0; shift++) {
         if (wanted + shift <= COLS - w && spanFree(wanted + shift, w, r)) left = wanted + shift;
         else if (wanted - shift >= 0 && spanFree(wanted - shift, w, r)) left = wanted - shift;
       }
-      if (left < 0) {
-        dropped++;
-        continue;
-      }
-      type[base + left] = t;
-      source[base + left] = c;
-      for (let k = left; k < left + w; k++) freeFrom[k] = r + h;
+      if (left < 0) dropped++;
+      else claim(r, left, c, t);
     }
 
     for (let c = 0; c < COLS; c++) {
@@ -88,15 +93,12 @@ function resolve(map: MapData, seed: number): MapLayout {
         }
         continue;
       }
-      // Minions stand wherever a cell is still free.
+      // Minions stand where their cells are still free.
       const t = enemyTypeAt(map, seed, r, c);
       if (t === 0 || t >= BIG_ENEMY_MIN_TYPE) continue;
-      if (freeFrom[c] > r) {
-        dropped++;
-        continue;
-      }
-      type[base + c] = t;
-      source[base + c] = c;
+      const left = Math.min(c, COLS - ENEMY_STATS[t].w);
+      if (spanFree(left, ENEMY_STATS[t].w, r)) claim(r, left, c, t);
+      else dropped++;
     }
   }
   return { type, source, gateLeft, gateRight, dropped };

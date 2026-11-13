@@ -1,8 +1,17 @@
 import type { Bullet, SimState } from '../types';
 import type { SpatialHash } from './Collision';
-import { BULLET_DAMAGE, BULLET_SPEED, FIRE_RATE, MUZZLE_OFFSET, SHOOTER_Y, SIM_DT } from './constants';
+import {
+  BULLET_DAMAGE,
+  BULLET_SPEED,
+  FIRE_RATE,
+  MUZZLE_OFFSET,
+  SHOOTER_FIRE_JITTER,
+  SHOOTER_Y,
+  SIM_DT,
+} from './constants';
 import { damageEnemy } from './Enemy';
 import { poolAlloc, poolFree } from './Pool';
+import { nextRandom } from './rng';
 
 export const BULLET_REGULAR = 0;
 export const BULLET_MINIGUN = 1;
@@ -23,13 +32,13 @@ export function spawnBullet(sim: SimState, x: number, y: number, kind: number): 
   sim.shots++;
 }
 
-/** The shooter fires straight up at the base rate (SPEC 8.1). */
+/** The shooter fires straight up at the base rate (SPEC 8.1), with a little random variation between shots (A31). */
 export function fireShooter(sim: SimState): void {
   const s = sim.shooter;
   s.fireCooldown -= SIM_DT;
   while (s.fireCooldown <= 0) {
     spawnBullet(sim, s.x, SHOOTER_Y - MUZZLE_OFFSET, BULLET_REGULAR);
-    s.fireCooldown += 1 / FIRE_RATE;
+    s.fireCooldown += (1 + (nextRandom(sim) * 2 - 1) * SHOOTER_FIRE_JITTER) / FIRE_RATE;
   }
 }
 
@@ -37,8 +46,8 @@ export function fireShooter(sim: SimState): void {
  * Moves bullets up the lane and resolves hits against the spatial hash.
  *
  * B3: a bullet expires at the top of the window, so enemies can only be hit
- * once they are on screen. A bullet moves 0.5 gu per tick, less than the
- * smallest enemy, so testing its new position cannot skip over a target.
+ * once they are on screen. A bullet moves less than one cell per tick, less
+ * than the smallest enemy, so testing its new position cannot skip over a target.
  */
 export function stepBullets(sim: SimState, hash: SpatialHash): void {
   const { items } = sim.bullets;
