@@ -868,7 +868,9 @@ export class Renderer3D implements GameView {
       }
       const batch = this.rats[e.type];
       if (e.type <= 3) {
-        batch.add(ex, 0, ez, u, u, u);
+        // A rat that takes a hit and lives is knocked back and squashed for a moment.
+        const hit = e.flash > 0 ? 1 : 0;
+        batch.add(ex, 0, ez - 0.22 * u * hit, u * (1 + 0.14 * hit), u * (1 - 0.16 * hit), u);
         this.blobs.add(ex + 0.12 * u, 0.02, ez + 0.1 * u, u, 1, u);
       } else {
         // Big enemies stomp: a slow squash and stretch.
