@@ -34,7 +34,6 @@ import {
   CAMERA_GOAL_MARGIN,
   CAMERA_HEIGHT,
   CAMERA_MIN_FOV,
-  CLONE_BOX_AMOUNTS,
   CLONE_CAP,
   CLONE_EASE,
   CLONE_EASE_RING_LAG,
@@ -73,6 +72,7 @@ import {
 import {
   FX_BASE,
   FX_BLAST,
+  FX_BOMB,
   FX_CAT,
   FX_GATE,
   FX_HIT,
@@ -87,11 +87,12 @@ import { HUD } from '../game/HUD';
 import { getLayout } from '../game/layout';
 import { MENU_TRACK, type Music, musicTrackFor } from '../game/Music';
 import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../game/Player';
-import { BULLET_MINIGUN, ROCKET_TANK } from '../game/Projectile';
+import { BULLET_MINIGUN, ROCKET_ENEMY, ROCKET_TANK } from '../game/Projectile';
 import { LASER_CHARGING, LASER_FIRING, laserCharge, laserPhase } from '../game/Weapon';
 import { cellSpec } from '../parsers/tokens';
 import type { Enemy, GameState, SimState } from '../types';
 import { Batch } from './Batch';
+import { ITEMS, itemCanvas } from './icons';
 import {
   blobGeometry,
   bulletGeometry,
@@ -197,28 +198,9 @@ function railTexture(): CanvasTexture {
   return tiled(canvas, 1, (LANE_NEAR - LANE_FAR) / 4);
 }
 
-/** A label such as "+10" for the faces of a box or a gate, twice as wide as it is tall. */
-function labelTexture(text: string, background: string): CanvasTexture {
-  const [canvas, g] = canvas2d(256, 128);
-  g.fillStyle = background;
-  g.fillRect(0, 0, 256, 128);
-  g.lineWidth = 10;
-  g.strokeStyle = 'rgba(255,255,255,0.6)';
-  g.strokeRect(7, 7, 242, 114);
-  const family = '"Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
-  g.font = `900 84px ${family}`;
-  // A long word such as MINIGUN is set smaller, so it fits the label.
-  const wide = g.measureText(text).width;
-  if (wide > 208) g.font = `900 ${Math.floor((84 * 208) / wide)}px ${family}`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.lineJoin = 'round';
-  g.lineWidth = 14;
-  g.strokeStyle = '#1b1736';
-  g.strokeText(text, 128, 70);
-  g.fillStyle = '#ffffff';
-  g.fillText(text, 128, 70);
-  const texture = new CanvasTexture(canvas);
+/** The picture on the faces of a panel or a box, twice as wide as it is tall. */
+function itemTexture(drop: number): CanvasTexture {
+  const texture = new CanvasTexture(itemCanvas(drop, 256, 128));
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 4;
   return texture;
@@ -260,30 +242,8 @@ function beamTexture(): CanvasTexture {
   return texture;
 }
 
-interface Reward {
-  /** What the label says. */
-  text: string;
-  /** Colour of the label, as CSS, and of the sides. */
-  face: string;
-  side: number;
-  /** Colour of the light when it is collected. */
-  glow: readonly [number, number, number];
-}
-
-/** What a panel or a box carries, indexed by drop code (D9). Code 0 is a surprise, rolled when it is collected. */
-const REWARDS: readonly Reward[] = [
-  { text: '?', face: '#e0448f', side: 0xa82566, glow: [1.0, 0.4, 0.7] },
-  { text: `+${CLONE_BOX_AMOUNTS[0]}`, face: '#2fb85c', side: 0x1f8a43, glow: [0.3, 1.0, 0.45] },
-  { text: `+${CLONE_BOX_AMOUNTS[1]}`, face: '#1fa7b8', side: 0x157887, glow: [0.25, 0.9, 1.0] },
-  { text: `+${CLONE_BOX_AMOUNTS[2]}`, face: '#8a5cf0', side: 0x6238c4, glow: [0.7, 0.5, 1.0] },
-  { text: `+${CLONE_BOX_AMOUNTS[3]}`, face: '#f2a000', side: 0xbf7a00, glow: [1.0, 0.75, 0.2] },
-  { text: 'MINIGUN', face: '#f2701d', side: 0xb84f0e, glow: [1.0, 0.55, 0.2] },
-  { text: 'LASER', face: '#e5383b', side: 0xa81f22, glow: [1.0, 0.3, 0.3] },
-  { text: 'ROCKET', face: '#3b6cf0', side: 0x2448b0, glow: [0.4, 0.6, 1.0] },
-  { text: 'TANK', face: '#4f9a3a', side: 0x356d26, glow: [0.5, 1.0, 0.4] },
-];
-/** The entry of REWARDS for a drop code. */
-const rewardOf = (drop: number): number => (drop >= 1 && drop < REWARDS.length ? drop : 0);
+/** The entry of ITEMS for a drop code. */
+const rewardOf = (drop: number): number => (drop >= 1 && drop < ITEMS.length ? drop : 0);
 
 /**
  * The 3D view (decisions A20 and A29). A perspective camera looks down the lane
@@ -314,6 +274,7 @@ export class Renderer3D implements GameView {
   private readonly gates: Batch[] = [];
   private readonly heroRing: Mesh;
   private readonly rockets: Batch;
+  private readonly enemyRockets: Batch;
   private readonly tank: Batch;
   private readonly bubbles: Batch;
   private readonly bubbleTanks: Batch;
@@ -348,6 +309,7 @@ export class Renderer3D implements GameView {
   private lastFxId = 0;
   private lastShots = 0;
   private lastRockets = 0;
+  private lastEnemyRockets = 0;
   private lastLaserPhase = 0;
   private lastState: GameState = 'BOOT';
   private lastTime = 0;
@@ -439,7 +401,8 @@ export class Renderer3D implements GameView {
     this.bulletGlows = new Batch(
       bulletGeometry(0.42, 2.8),
       new MeshBasicMaterial({
-        color: 0xffa200,
+        // White: each bullet's glow takes its colour from its instance tint.
+        color: 0xffffff,
         transparent: true,
         opacity: 0.55,
         blending: AdditiveBlending,
@@ -456,9 +419,9 @@ export class Renderer3D implements GameView {
     // faces the camera. A box is the crate a fat rat drops.
     const panel = new BoxGeometry(GATE_WIDTH - 1.4, 6.0, 1.3).rotateX(-0.62).translate(0, 2.7, 0);
     const crate = new BoxGeometry(POWERUP_WIDTH - 2.4, 4.2, 5.0).translate(0, 2.5, 0);
-    REWARDS.forEach((reward, drop) => {
+    ITEMS.forEach((reward, drop) => {
       const side = new MeshLambertMaterial({ color: reward.side });
-      const label = new MeshLambertMaterial({ map: labelTexture(reward.text, reward.face) });
+      const label = new MeshLambertMaterial({ map: itemTexture(drop) });
       // Box faces: +x, -x, +y, -y, +z, -z.
       const gate = new Batch(panel, [side, side, side, side, label, side], POOL_POWERUPS, true);
       gate.mesh.castShadow = true;
@@ -476,7 +439,9 @@ export class Renderer3D implements GameView {
     });
 
     // --- weapons ---
-    this.rockets = new Batch(rocketGeometry(), new MeshLambertMaterial({ vertexColors: true }), POOL_ROCKETS);
+    const rocketMaterial = new MeshLambertMaterial({ vertexColors: true });
+    this.rockets = new Batch(rocketGeometry(), rocketMaterial, POOL_ROCKETS);
+    this.enemyRockets = new Batch(rocketGeometry(true), rocketMaterial, POOL_ROCKETS);
     const tankMaterial = new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.25 });
     this.tank = new Batch(tankGeometry(), tankMaterial, 1, false, outlineMaterial(1, 0, 0.012));
     this.tank.mesh.castShadow = true;
@@ -505,6 +470,7 @@ export class Renderer3D implements GameView {
     this.beam.visible = false;
     this.scene.add(
       this.rockets.mesh,
+      this.enemyRockets.mesh,
       this.tank.mesh,
       this.tank.outline!,
       this.bubbleTanks.mesh,
@@ -731,6 +697,7 @@ export class Renderer3D implements GameView {
       this.lastFxId = 0;
       this.lastShots = 0;
       this.lastRockets = 0;
+      this.lastEnemyRockets = 0;
       this.lastLaserPhase = 0;
       this.cloneCount = 0;
       this.tossedCount = 0;
@@ -797,9 +764,10 @@ export class Renderer3D implements GameView {
       sfx.shot(1 / Math.sqrt(1 + sim.clones * 0.12));
       this.lastShots = sim.shots;
     }
-    if (sim.rocketsFired > this.lastRockets) {
+    if (sim.rocketsFired > this.lastRockets || sim.enemyRocketsFired > this.lastEnemyRockets) {
       sfx.rocket();
       this.lastRockets = sim.rocketsFired;
+      this.lastEnemyRockets = sim.enemyRocketsFired;
     }
     const phase = laserPhase(sim);
     if (phase !== this.lastLaserPhase) {
@@ -863,7 +831,7 @@ export class Renderer3D implements GameView {
           sfx.catLost();
           break;
         case FX_PICKUP: {
-          const reward = REWARDS[rewardOf(f.tag)];
+          const reward = ITEMS[rewardOf(f.tag)];
           const [r, g, b] = reward.glow;
           sparks.burst(0, 22, x, 1.2, z, 7, 11, 0.7, 0.9, 0.15, r, g, b, 8);
           sparks.emit(0, x, 1.5, z, 0, 0, 0, 0.3, 3, 9, r, g, b);
@@ -874,7 +842,7 @@ export class Renderer3D implements GameView {
           break;
         }
         case FX_GATE: {
-          const reward = REWARDS[rewardOf(f.tag)];
+          const reward = ITEMS[rewardOf(f.tag)];
           const [r, g, b] = reward.glow;
           // The panel shatters: shards fly out, dust rises, and a flash marks the spot.
           sparks.burst(0, 56, x, 3, z, 22, 22, 0.8, 1.9, 0.3, r, g, b, 34);
@@ -895,12 +863,28 @@ export class Renderer3D implements GameView {
           this.shake = Math.max(this.shake, f.size >= 30 ? 1 : 0.8);
           sfx.punch(f.size);
           break;
+        case FX_BOMB:
+          // A bomb on a rail: a wide blast and the number of units it cost.
+          sparks.burst(0, 60, x, 2, z, 34, 20, 0.7, 2.2, 0.3, 1.0, 0.55, 0.15, 26);
+          sparks.burst(1, 18, x, 2, z, 14, 10, 0.9, 3, 9, 0.3, 0.28, 0.32, 3);
+          sparks.emit(0, x, 4, z, 0, 0, 0, 0.36, 10, 46, 1.0, 0.75, 0.35);
+          if (f.size > 0) this.popup(`-${f.size}`, x, z, '#ff5a5a');
+          this.shake = 1;
+          sfx.explosion(true);
+          break;
         case FX_BLAST: {
-          const big = f.tag === 1;
+          if (f.tag === 3) {
+            // An enemy rocket shot down: a harmless puff.
+            sparks.burst(0, 14, x, 3, z, 12, 8, 0.4, 1.4, 0.2, 1.0, 0.7, 0.3, 14);
+            sparks.burst(1, 6, x, 3, z, 5, 5, 0.6, 1.6, 4, 0.5, 0.5, 0.55, 2);
+            sfx.explosion(false);
+            break;
+          }
+          const big = f.tag >= 1;
           sparks.burst(0, big ? 34 : 14, x, 2, z, f.size * 1.6, 10, 0.45, 1.6, 0.2, 1.0, 0.62, 0.2, 18);
           sparks.burst(1, big ? 12 : 5, x, 1.5, z, f.size * 0.7, 7, 0.7, 2, f.size * 0.6, 0.35, 0.33, 0.38, 3);
           sparks.emit(0, x, 3, z, 0, 0, 0, 0.26, f.size * 0.5, f.size * 1.9, 1.0, 0.8, 0.45);
-          this.shake = Math.max(this.shake, big ? 0.7 : 0.35);
+          this.shake = Math.max(this.shake, f.tag === 2 ? 1 : big ? 0.7 : 0.35);
           sfx.explosion(big);
           break;
         }
@@ -1178,11 +1162,25 @@ export class Renderer3D implements GameView {
     const { sparks } = this;
 
     this.rockets.begin();
+    this.enemyRockets.begin();
     const rockets = sim.rockets;
     for (let i = 0; i < rockets.high; i++) {
       const r = rockets.items[i];
       if (!r.active) continue;
       const z = r.prevY + (r.y - r.prevY) * alpha;
+      if (r.kind === ROCKET_ENEMY) {
+        // An enemy rocket comes down the lane: big, grey, trailing dark smoke, with a red
+        // warning light on the lane where it is heading.
+        const size = 8;
+        const y = BULLET_HEIGHT + 1.6;
+        this.enemyRockets.add(r.x, y, z, size, size, size);
+        sparks.flash(r.x, y, z - size * 0.55, size * 0.8, 1, 0.5, 0.15);
+        sparks.flash(r.x, 0.4, SHOOTER_Y - 3, 7 + 3 * Math.sin(time * 18), 1, 0.12, 0.1);
+        if (puff) {
+          sparks.emit(1, r.x, y, z - size * 0.6, (Math.random() - 0.5) * 3, 1 + Math.random() * 2, -6, 0.4, 1.6, 4.5, 0.4, 0.38, 0.42);
+        }
+        continue;
+      }
       const big = r.kind === ROCKET_TANK;
       const size = big ? 6 : 3.2;
       const y = BULLET_HEIGHT + (big ? 2.5 : 0.4);
@@ -1193,6 +1191,7 @@ export class Renderer3D implements GameView {
       }
     }
     this.rockets.end();
+    this.enemyRockets.end();
 
     // The laser: a thin line that thickens while it charges, then the full beam.
     const phase = laserPhase(sim);
@@ -1243,14 +1242,17 @@ export class Renderer3D implements GameView {
       const b = items[i];
       if (!b.active) continue;
       const z = b.prevY + (b.y - b.prevY) * frame.alpha;
+      if (b.kind === BULLET_MINIGUN) {
+        // Owner's choice: minigun bullets are dark blue. A glow is light added to the
+        // scene and would wash the colour out, so these are plain, fatter slugs.
+        this.bulletCores.add(b.x, BULLET_HEIGHT, z, 2, 1.4, 1.15);
+        this.bulletCores.tint(0.03, 0.07, 0.5);
+        continue;
+      }
       this.bulletCores.add(b.x, BULLET_HEIGHT, z, 1, 1, 1);
       // The glow trails behind the bullet.
       this.bulletGlows.add(b.x, BULLET_HEIGHT, z + 0.75, 1, 1, 1);
-      if (b.kind === BULLET_MINIGUN) {
-        // SPEC 8: minigun bullets are orange.
-        this.bulletCores.tint(1, 0.62, 0.3);
-        this.bulletGlows.tint(1, 0.45, 0.25);
-      }
+      this.bulletGlows.tint(1, 0.64, 0);
     }
     this.bulletCores.end();
     this.bulletGlows.end();

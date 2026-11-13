@@ -1,9 +1,13 @@
 import type { Bullet, Rocket, SimState } from '../types';
 import type { SpatialHash } from './Collision';
+import { formationRadius, killInSquare } from './Clone';
 import {
   BULLET_DAMAGE,
   BULLET_SPEED,
+  CAT_RADIUS,
   DROP_TANK,
+  ENEMY_ROCKET_HALF_WIDTH,
+  type EnemyRocketStats,
   FIRE_RATE,
   GATE_TYPE,
   MINIGUN_RATE_FACTOR,
@@ -18,6 +22,7 @@ import {
   TANK_BUBBLE_SIZE,
   TANK_DAMAGE,
   TANK_ROCKET_AOE,
+  WINDOW_ROWS,
 } from './constants';
 import { damageEnemy } from './Enemy';
 import { FX_BLAST, spawnFx } from './Fx';
@@ -30,13 +35,14 @@ export const BULLET_MINIGUN = 1;
 
 export const ROCKET_PLAYER = 0;
 export const ROCKET_TANK = 1;
+export const ROCKET_ENEMY = 2;
 
 export function makeBullet(): Bullet {
   return { active: false, x: 0, y: 0, prevY: 0, kind: 0 };
 }
 
 export function makeRocket(): Rocket {
-  return { active: false, x: 0, y: 0, prevY: 0, kind: 0 };
+  return { active: false, x: 0, y: 0, prevY: 0, kind: 0, hp: 0, aoe: 0, speed: 0 };
 }
 
 /** Fires one bullet straight up from (x, y). Does nothing when the pool is full. */
@@ -60,7 +66,45 @@ export function spawnRocket(sim: SimState, x: number, y: number, kind: number): 
   r.y = y;
   r.prevY = y;
   r.kind = kind;
+  r.hp = 0;
+  r.aoe = 0;
+  r.speed = ROCKET_SPEED;
   sim.rocketsFired++;
+}
+
+/** An enemy fires a rocket straight down the lane from (x, y) (SPEC 7.2). */
+export function spawnEnemyRocket(sim: SimState, x: number, y: number, stats: EnemyRocketStats): void {
+  const index = poolAlloc(sim.rockets);
+  if (index < 0) return;
+  const r = sim.rockets.items[index];
+  r.x = x;
+  r.y = y;
+  r.prevY = y;
+  r.kind = ROCKET_ENEMY;
+  r.hp = stats.hp;
+  r.aoe = stats.aoe;
+  r.speed = stats.speed;
+  sim.enemyRocketsFired++;
+}
+
+/** Index of the enemy rocket a shot at (x, y) would hit, or -1. */
+function enemyRocketAt(sim: SimState, x: number, y: number): number {
+  const { items, high } = sim.rockets;
+  for (let i = 0; i < high; i++) {
+    const r = items[i];
+    if (!r.active || r.kind !== ROCKET_ENEMY) continue;
+    if (Math.abs(x - r.x) < ENEMY_ROCKET_HALF_WIDTH && Math.abs(y - r.y) < ENEMY_ROCKET_HALF_WIDTH) return i;
+  }
+  return -1;
+}
+
+/** A shot hits an enemy rocket. At 0 HP it bursts and hurts nobody. */
+function damageEnemyRocket(sim: SimState, index: number, amount: number): void {
+  const r = sim.rockets.items[index];
+  r.hp -= amount;
+  if (r.hp > 0) return;
+  spawnFx(sim, FX_BLAST, r.x, r.y, r.aoe, 3);
+  poolFree(sim.rockets, index);
 }
 
 /**
@@ -120,6 +164,7 @@ export function stepBullets(sim: SimState, hash: SpatialHash): void {
   const { items } = sim.bullets;
   const step = BULLET_SPEED * SIM_DT;
   const bubbles = anyBubble(sim);
+  const threats = sim.rockets.items.some((r) => r.active && r.kind === ROCKET_ENEMY);
   for (let i = sim.bullets.high - 1; i >= 0; i--) {
     const b = items[i];
     if (!b.active) continue;
@@ -134,6 +179,14 @@ export function stepBullets(sim: SimState, hash: SpatialHash): void {
       damageEnemy(sim, hit, BULLET_DAMAGE, b.x, b.y);
       poolFree(sim.bullets, i);
       continue;
+    }
+    if (threats) {
+      const rocket = enemyRocketAt(sim, b.x, b.y);
+      if (rocket >= 0) {
+        damageEnemyRocket(sim, rocket, BULLET_DAMAGE);
+        poolFree(sim.bullets, i);
+        continue;
+      }
     }
     if (!bubbles) continue;
     const bubble = bubbleAt(sim, b.x, b.y);
@@ -175,12 +228,25 @@ export function explode(
     if (!p.active || p.kind !== DROP_TANK) continue;
     if (Math.abs(p.x - x) < reach && Math.abs(p.y - y) < reach) damageBubble(sim, i, damage);
   }
+  const rockets = sim.rockets;
+  for (let i = 0; i < rockets.high; i++) {
+    const r = rockets.items[i];
+    if (!r.active || r.kind !== ROCKET_ENEMY) continue;
+    if (Math.abs(r.x - x) < half + ENEMY_ROCKET_HALF_WIDTH && Math.abs(r.y - y) < half + ENEMY_ROCKET_HALF_WIDTH) {
+      damageEnemyRocket(sim, i, damage);
+    }
+  }
   spawnFx(sim, FX_BLAST, x, y, aoe, tag);
 }
 
 /**
- * Moves the swarm's rockets up the lane. A rocket explodes on the first enemy
- * or tank bubble it meets; one that reaches the top of the window is gone (B3).
+ * Moves the swarm's rockets up the lane. A rocket explodes on the first enemy,
+ * enemy rocket or tank bubble it meets; one that reaches the top of the window
+ * is gone (B3).
+ *
+ * Enemy rockets fly down the lane. One that reaches the swarm clears a square
+ * of cats round it; inside the tank the swarm is safe. One that misses is gone
+ * at the goal line.
  */
 export function stepRockets(sim: SimState, hash: SpatialHash): void {
   const { items } = sim.rockets;
@@ -189,12 +255,27 @@ export function stepRockets(sim: SimState, hash: SpatialHash): void {
     const r = items[i];
     if (!r.active) continue;
     r.prevY = r.y;
+    if (r.kind === ROCKET_ENEMY) {
+      r.y += r.speed * SIM_DT;
+      const reach = formationRadius(sim.clones) + CAT_RADIUS + 1;
+      const dx = r.x - sim.shooter.x;
+      const dy = r.y - SHOOTER_Y;
+      if (dx * dx + dy * dy < reach * reach) {
+        const { x, y, aoe } = r;
+        poolFree(sim.rockets, i);
+        spawnFx(sim, FX_BLAST, x, y, aoe, 2);
+        if (sim.tank <= 0 && !killInSquare(sim, x, y, aoe / 2)) return;
+      } else if (r.y >= WINDOW_ROWS) {
+        poolFree(sim.rockets, i);
+      }
+      continue;
+    }
     r.y -= step;
     if (r.y < 0) {
       poolFree(sim.rockets, i);
       continue;
     }
-    if (hash.queryPoint(r.x, r.y, sim.enemies) < 0 && bubbleAt(sim, r.x, r.y) < 0) continue;
+    if (hash.queryPoint(r.x, r.y, sim.enemies) < 0 && bubbleAt(sim, r.x, r.y) < 0 && enemyRocketAt(sim, r.x, r.y) < 0) continue;
     const tank = r.kind === ROCKET_TANK;
     const { x, y } = r;
     poolFree(sim.rockets, i);

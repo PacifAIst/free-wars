@@ -87,7 +87,8 @@ describe('token table (PLAN section 5)', () => {
   });
 
   it('rejects out-of-range values', () => {
-    expect(bad('E4-P9')).toMatch(/drop code P9 is out of range/);
+    expect(bad('E4-P10')).toMatch(/drop code P10 is out of range/);
+    expect(ok('G1-P9', 1)).toEqual({ kind: 'gate', type: 0, hp: 1, drop: 9 });
     expect(bad('E4-P0')).toMatch(/drop code P0 is out of range/);
     expect(bad('E5-0')).toMatch(/HP override must be at least 1/);
     expect(bad('E5-99999999')).toMatch(/too large/);

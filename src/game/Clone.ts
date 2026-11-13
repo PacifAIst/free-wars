@@ -218,7 +218,7 @@ const slotDies = new Uint8Array(CLONE_CAP);
  *
  * Returns false when the punch also reached the shooter, which loses the level.
  */
-function killNear(sim: SimState, px: number, py: number, kills: number): boolean {
+export function killNear(sim: SimState, px: number, py: number, kills: number): boolean {
   const n = sim.clones;
   const count = Math.min(kills, n);
   for (let s = 0; s < n; s++) {
@@ -234,6 +234,16 @@ function killNear(sim: SimState, px: number, py: number, kills: number): boolean
     }
     slotDies[best] = 1;
   }
+  removeMarked(sim, n, count);
+  if (kills <= n) return true;
+  spawnFx(sim, FX_CAT, sim.shooter.x, SHOOTER_Y, 1);
+  sim.phase = 'lost';
+  sim.lossReason = 'swarm';
+  return false;
+}
+
+/** Removes the `count` clones marked in `slotDies`, out of `n`, and closes ranks (see `killNear`). */
+function removeMarked(sim: SimState, n: number, count: number): void {
   const left = n - count;
   // Next slot beyond the new formation whose cat lives: it moves into a dead cat's place.
   let spare = left;
@@ -248,11 +258,24 @@ function killNear(sim: SimState, px: number, py: number, kills: number): boolean
     spawnFx(sim, FX_CAT, cloneX(sim, s), cloneY(s), from, s + 1);
   }
   sim.clones = left;
-  if (kills <= n) return true;
-  spawnFx(sim, FX_CAT, sim.shooter.x, SHOOTER_Y, 1);
-  sim.phase = 'lost';
-  sim.lossReason = 'swarm';
-  return false;
+}
+
+/**
+ * An enemy rocket's blast (SPEC 7.2): every cat inside the square of half-side
+ * `half` round (x, y) dies, the shooter included; a clone then takes its place.
+ * Returns false when no cat is left, which loses the level.
+ */
+export function killInSquare(sim: SimState, x: number, y: number, half: number): boolean {
+  const n = sim.clones;
+  let count = 0;
+  for (let s = 0; s < n; s++) {
+    const inside = Math.abs(cloneX(sim, s) - x) <= half && Math.abs(cloneY(s) - y) <= half;
+    slotDies[s] = inside ? 1 : 0;
+    if (inside) count++;
+  }
+  removeMarked(sim, n, count);
+  if (Math.abs(sim.shooter.x - x) > half || Math.abs(SHOOTER_Y - y) > half) return true;
+  return loseCat(sim, sim.shooter.x, SHOOTER_Y);
 }
 
 /**

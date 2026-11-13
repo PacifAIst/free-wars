@@ -20,14 +20,55 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 
 ## Music
 
-Put MP3 files named `0.mp3` to `11.mp3` in a `music` folder at the project root: `0` plays on the
-menus, `1` to `11` in the levels. The folder is not part of the repository. Without it the game
-plays with sound effects only.
+`music/0.mp3` plays on the menus. A map plays the track of its last digit (`music/4.mp3` for maps
+4, 14, 24 and 34), maps ending in 0 play `10.mp3`, and the boss maps 11, 22, 33 and 44 play
+`11.mp3`. The tracks are from Pixabay and Unminus.
 
-## Maps
+## Map editor
 
-`public/maps/1.md` to `44.md` are placeholder levels written by `node scripts/gen-maps.mjs`.
-Replace any of them with your own; the format is described in `SPEC.md` section 11.
+MAP EDITOR on the splash screen. Drag an enemy or an item from the palette onto the grid, or pick
+it and press on the grid; drag on to paint minions and rail items; the rubber erases. Whatever
+you place replaces what it covers. Scroll down for more rows: row 0 reaches the swarm first.
+
+- **Template** loads one of the 44 maps to start from.
+- **SAVE .FW** downloads the map as a text file. **UPLOAD .FW** reads one back, in your browser
+  only. **LINK** reads one from a web address. A file that is not a map gives "Wrong file".
+- **TEST** plays the map.
+- Add `?fw=<link to a .fw file>` to the game's address to play that map directly.
+- To replace built-in map 7, save your map as `public/maps/7.fw`.
+
+A `.fw` file is plain text, one thing per line, `row,column,what`:
+
+```
+FREE-WARS MAP 1
+name: My map
+0,L,+10
+0,R,ROCKET
+112,0,E1
+230,14,E4 hp=320 drop=+50
+```
+
+Column 0-43 is the left cell of a unit in the lane; `L` and `R` are the rails. In the lane:
+`E1`-`E8` or `ER` (a random minion). On a rail: `? +1 +3 +10 +50 MINIGUN LASER ROCKET TANK BOMB`.
+
+## Changing the numbers
+
+Every speed, HP, damage, size and timing is in one file: `src/game/constants.ts`. Save it and
+the page reloads. The ones you will want most:
+
+| What | Constant |
+|---|---|
+| Speed of all enemies | `SPEED_SCALE` |
+| HP, size and speed of each enemy | `ENEMY_STATS`, `BIG_HP_FACTOR` |
+| Cats killed by a punch, and its pace | `PUNCH_KILLS`, `SMASH_INTERVAL` |
+| Enemy rockets | `ENEMY_ROCKETS` |
+| Fire rate, bullet speed and damage | `FIRE_RATE`, `CLONE_FIRE_RATE_FACTOR`, `BULLET_SPEED`, `BULLET_DAMAGE` |
+| Weapons | `MINIGUN_*`, `LASER_*`, `ROCKET_*`, `TANK_*` |
+| Bomb | `BOMB_KILLS`, `BOMB_HITS_CATS` |
+| Speed of panels and boxes | `RAIL_ITEM_SPEED_SPEC`, `POWERUP_SPEED` |
+| Clones at the start, clone cap | `START_CLONES`, `CLONE_CAP` |
+| Camera | `CAMERA_*`, `VIEW_COLS` |
+| Volumes | `SFX_VOLUME`, `MUSIC_VOLUME_RATIO` |
 
 ## Develop
 

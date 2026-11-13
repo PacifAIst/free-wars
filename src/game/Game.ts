@@ -79,12 +79,16 @@ export class Game {
   map: MapData = EMPTY_MAP;
   sim: SimState = createSim(EMPTY_MAP, 0);
   notice = '';
+  /** True while something else has the screen on the menu, such as the map editor: PLAY waits. */
+  menuBusy = false;
 
   private readonly scratch: SimScratch = createScratch();
   private readonly nextSeed: () => number;
   private readonly progress: Progress;
   /** Set when the game was started on one given map: the map grid is skipped. */
   private readonly directLevel: string | null;
+  /** A map handed to the game directly, from the map editor or a link: it is not in the map source. */
+  private custom: MapData | null = null;
   private accumulatorMs = 0;
   private lastMs = -1;
   private readonly stepInput: SimInput = { targetDelta: 0, keyDir: 0 };
@@ -130,7 +134,7 @@ export class Game {
 
   /** The PLAY button: on to the map grid, or straight into the map the game was started on. */
   play(): void {
-    if (this.state !== 'MENU') return;
+    if (this.state !== 'MENU' || this.menuBusy) return;
     this.notice = '';
     this.transition('LEVEL_SELECT');
     if (this.directLevel !== null) this.load(this.directLevel);
@@ -149,7 +153,17 @@ export class Game {
     this.load(id);
   }
 
+  /** Plays a map that is not one of the built-in ones: from the map editor, or from a link to a .fw file. */
+  playCustom(map: MapData): void {
+    if (this.state !== 'MENU') return;
+    this.notice = '';
+    this.custom = map;
+    this.transition('LEVEL_SELECT');
+    this.load(map.id);
+  }
+
   private load(id: string): void {
+    if (this.custom !== null && this.custom.id !== id) this.custom = null;
     this.levelId = id;
     this.loadStarted = false;
     this.transition('LOADING');
@@ -169,7 +183,7 @@ export class Game {
   /** After a victory: back to the map grid, where the next map is now open. */
   continueAfterWin(): void {
     if (this.state !== 'WIN') return;
-    if (this.directLevel !== null) this.transition('MENU');
+    if (this.directLevel !== null || this.custom !== null) this.transition('MENU');
     else this.transition('LEVEL_SELECT');
   }
 
@@ -256,6 +270,10 @@ export class Game {
       this.loadStarted = true;
       this.loadedMap = null;
       this.loadError = null;
+      if (this.custom !== null) {
+        this.loadedMap = this.custom;
+        return;
+      }
       const id = this.levelId;
       this.maps.load(id).then(
         (map) => {

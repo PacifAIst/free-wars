@@ -66,6 +66,8 @@ export interface Enemy {
   swing: number;
   /** The last laser cast that damaged this enemy: a cast hurts a big enemy only once. */
   cast: number;
+  /** E4, E7, E8: seconds until it fires its next rocket. */
+  reload: number;
   /**
    * Gates only (A29). `swept` is -1 until the gate reaches the swarm, then the
    * position of its front edge at its last kill. `quota` is how many cats it
@@ -95,8 +97,12 @@ export interface Rocket {
   x: number;
   y: number;
   prevY: number;
-  /** 0 from a cat, 1 from the tank. */
+  /** 0 from a cat, 1 from the tank, 2 from an enemy (it flies down the lane). */
   kind: number;
+  /** Enemy rockets: shots it still takes, the side of the square it clears, and its speed. */
+  hp: number;
+  aoe: number;
+  speed: number;
 }
 
 export interface Bullet {
@@ -163,6 +169,8 @@ export interface SimState {
   shots: number;
   /** Rockets fired by the swarm and the tank so far. */
   rocketsFired: number;
+  /** Rockets fired by enemies so far. */
+  enemyRocketsFired: number;
   /** Seconds of minigun fire left (SPEC 8.1). */
   minigun: number;
   /** Seconds of rocket mode left. */
@@ -200,7 +208,7 @@ export interface CellSpec {
   readonly type: number;
   /** Enemy HP override (0 = use the enemy table), or the resistance of a gate. */
   readonly hp: number;
-  /** Authored drop code P1..P8 (D9), or 0 for none. */
+  /** Authored drop code P1..P9 (D9, A34), or 0 for none. */
   readonly drop: number;
 }
 

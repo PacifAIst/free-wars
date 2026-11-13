@@ -1,5 +1,6 @@
 import { formationRadius } from '../src/game/Clone';
-import { CLONE_BOX_AMOUNTS, COLS, DROP_CLONE_1, GATE_TYPE, SHOOTER_Y, UNIT } from '../src/game/constants';
+import { BIG_ENEMY_MIN_TYPE, CLONE_BOX_AMOUNTS, COLS, DROP_BOMB, DROP_CLONE_1, GATE_TYPE, SHOOTER_Y, UNIT } from '../src/game/constants';
+import { ROCKET_ENEMY } from '../src/game/Projectile';
 import { createScratch, type SimScratch, stepSim } from '../src/game/Sim';
 import type { SimOptions } from '../src/game/World';
 import { formatIssue, parseMap } from '../src/parsers/markdownMapParser';
@@ -58,10 +59,12 @@ export const gatesOf = (sim: SimState): Enemy[] => activeEnemies(sim).filter((e)
 /**
  * A simple player, used to check that a level can be won, not to play well.
  *
- *  1. Rats close to the swarm come first: sweep them.
+ *  0. An enemy rocket on its way: stand under it and shoot it down.
+ *  1. Rats close to the swarm, and any big rat in the window, come first: sweep them.
  *  2. Otherwise catch a falling box, or get under a tank bubble to shoot it open.
  *  3. Otherwise walk onto the rail of a panel that will arrive before any rat
  *     does, the richer one when two arrive together, and let it come.
+ *  It never goes for a bomb, and leaves a rail that a bomb is coming down.
  *  4. Otherwise sweep: move the swarm over the nearest column that still has
  *     rats of the leading band, a swarm-width at a time, and hold until it is clear.
  */
@@ -76,7 +79,17 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     if (!e.active || e.type === GATE_TYPE || e.y + e.h / 2 < 0) continue;
     if (e.y + e.h / 2 > danger) danger = e.y + e.h / 2;
   }
-  const close = danger > SHOOTER_Y - radius - BOT_CLOSE_ROWS;
+  // A big rat in the window is fought at once: it fires rockets and takes long to bring down.
+  let big = false;
+  for (const e of sim.enemies.items) {
+    if (e.active && e.type >= BIG_ENEMY_MIN_TYPE && e.type !== GATE_TYPE && e.y + e.h / 2 > 0) big = true;
+  }
+  const close = big || danger > SHOOTER_Y - radius - BOT_CLOSE_ROWS;
+  // An enemy rocket on its way: stand under it and shoot it down.
+  let rocket: { x: number; y: number } | null = null;
+  for (const r of sim.rockets.items) {
+    if (r.active && r.kind === ROCKET_ENEMY && (rocket === null || r.y > rocket.y)) rocket = r;
+  }
 
   let box: { x: number; y: number } | null = null;
   for (const p of sim.powerups.items) {
@@ -86,8 +99,14 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
   // The panel that reaches the swarm soonest, among those ahead of every rat.
   let gate: Enemy | null = null;
   let gateWorth = 0;
+  let bomb = false;
   for (const e of sim.enemies.items) {
     if (!e.active || e.type !== GATE_TYPE || e.y < 0 || e.y > SHOOTER_Y + radius) continue;
+    if (e.drop === DROP_BOMB) {
+      // A bomb close by on the rail the swarm stands on: get out of its way.
+      if (e.y > SHOOTER_Y - radius - 40 && Math.abs(e.x - x) < e.w / 2 + radius + 2) bomb = true;
+      continue;
+    }
     if (e.y + e.h / 2 <= danger) continue;
     // A weapon counts for about as much as twenty cats.
     const worth = CLONE_BOX_AMOUNTS[e.drop - DROP_CLONE_1] ?? 20;
@@ -97,7 +116,9 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     }
   }
 
-  if (!close && box !== null) {
+  if (rocket !== null) {
+    goal = rocket.x;
+  } else if (!close && box !== null) {
     goal = box.x;
   } else if (!close && gate !== null) {
     goal = gate.x;
@@ -122,6 +143,7 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     else goal = best < reach * 0.9 ? x : column + Math.sign(column - x) * radius * 0.7;
   }
 
+  if (bomb) goal = COLS / 2;
   const delta = goal - x;
   out.targetDelta = Math.max(-0.8, Math.min(0.8, delta));
   out.keyDir = 0;

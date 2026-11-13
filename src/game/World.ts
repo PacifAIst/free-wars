@@ -133,6 +133,7 @@ export function createWorld(map: MapData, seed: number, options: Partial<SimOpti
     fxCount: 0,
     shots: 0,
     rocketsFired: 0,
+    enemyRocketsFired: 0,
     minigun: 0,
     rocketMode: 0,
     laser: 0,

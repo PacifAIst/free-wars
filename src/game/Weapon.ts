@@ -19,9 +19,10 @@ import {
   TANK_SIZE,
 } from './constants';
 import { damageEnemy } from './Enemy';
-import { FX_LASER, FX_TANK, spawnFx } from './Fx';
+import { FX_BLAST, FX_LASER, FX_TANK, spawnFx } from './Fx';
 import { damageBubble } from './Powerup';
-import { ROCKET_TANK, spawnRocket } from './Projectile';
+import { ROCKET_ENEMY, ROCKET_TANK, spawnRocket } from './Projectile';
+import { poolFree } from './Pool';
 
 // The timed weapons of SPEC 8.1. The minigun and rocket mode only change what
 // the cats fire (see `fireWeapon`); the laser and the tank act on their own.
@@ -77,6 +78,14 @@ function stepLaser(sim: SimState): void {
         e.cast = sim.laserCasts;
         damageEnemy(sim, i, LASER_BIG_DMG, e.x, e.y + e.h / 2);
       }
+    }
+    // B5: the beam also burns up the enemy rockets in it.
+    const rockets = sim.rockets;
+    for (let i = 0; i < rockets.high; i++) {
+      const r = rockets.items[i];
+      if (!r.active || r.kind !== ROCKET_ENEMY || r.y >= SHOOTER_Y || Math.abs(r.x - x) >= half) continue;
+      spawnFx(sim, FX_BLAST, r.x, r.y, r.aoe, 3);
+      poolFree(sim.rockets, i);
     }
     const reach = half + TANK_BUBBLE_SIZE / 2;
     const boxes = sim.powerups;

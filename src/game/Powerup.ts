@@ -1,8 +1,12 @@
 import type { Powerup, SimState } from '../types';
-import { addClones, formationRadius } from './Clone';
+import { addClones, formationRadius, killNear } from './Clone';
 import {
   CLONE_BOX_AMOUNTS,
+  BIG_ENEMY_MIN_TYPE,
+  BOMB_HITS_CATS,
+  BOMB_KILLS,
   CLONE_BOX_WEIGHTS,
+  DROP_BOMB,
   DROP_CLONE_1,
   DROP_CLONE_50,
   DROP_LASER,
@@ -10,6 +14,7 @@ import {
   DROP_ROCKET,
   DROP_TANK,
   DROP_WEIGHTS,
+  GATE_TYPE,
   HIT_FLASH_SECONDS,
   LASER_TOTAL_SECONDS,
   MINIGUN_CAP_SECONDS,
@@ -28,7 +33,8 @@ import {
   TANK_SECONDS,
   WINDOW_ROWS,
 } from './constants';
-import { FX_HIT, FX_PICKUP, FX_TANK, spawnFx } from './Fx';
+import { damageEnemy } from './Enemy';
+import { FX_BOMB, FX_HIT, FX_PICKUP, FX_TANK, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
 import { nextRandom } from './rng';
 
@@ -77,11 +83,46 @@ export function startTank(sim: SimState): void {
 }
 
 /**
+ * A bomb goes off at (x, y) because the swarm touched it (A34). It kills
+ * BOMB_KILLS units: the cats nearest it, or, with BOMB_HITS_CATS off, the
+ * minions nearest the goal line. A swarm inside the tank is not hurt.
+ */
+function explodeBomb(sim: SimState, x: number, y: number): void {
+  let kills = 0;
+  if (BOMB_HITS_CATS) {
+    if (sim.tank <= 0) {
+      kills = Math.min(BOMB_KILLS, sim.clones + 1);
+      spawnFx(sim, FX_BOMB, x, y, kills);
+      killNear(sim, x, y, BOMB_KILLS);
+      return;
+    }
+  } else {
+    const { items } = sim.enemies;
+    while (kills < BOMB_KILLS) {
+      let best = -1;
+      for (let i = 0; i < sim.enemies.high; i++) {
+        const e = items[i];
+        if (!e.active || e.type === GATE_TYPE || e.type >= BIG_ENEMY_MIN_TYPE || e.y + e.h / 2 <= 0) continue;
+        if (best < 0 || e.y > items[best].y) best = i;
+      }
+      if (best < 0) break;
+      damageEnemy(sim, best, items[best].hp, items[best].x, items[best].y);
+      kills++;
+    }
+  }
+  spawnFx(sim, FX_BOMB, x, y, kills);
+}
+
+/**
  * Gives the swarm what a drop code stands for: clones, or one of the weapons
  * (SPEC 9). `fxKind` says how it arrived: caught as a box or collected from a
  * panel. The effect carries the clones gained as its size and the code as its tag.
  */
 export function grantDrop(sim: SimState, kind: number, x: number, y: number, fxKind: number): void {
+  if (kind === DROP_BOMB) {
+    explodeBomb(sim, x, y);
+    return;
+  }
   let amount = 0;
   if (isCloneBox(kind)) {
     amount = CLONE_BOX_AMOUNTS[kind - DROP_CLONE_1];

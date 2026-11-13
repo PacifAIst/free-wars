@@ -3,12 +3,12 @@
 Status of the build against the goals in `PLAN.md` section 8. This file is the resume point:
 read it first when picking the work up again. Updated at every milestone and whenever work pauses.
 
-Last updated: 2026-11-13, after the owner's sixth review and the screens request.
+Last updated: 2026-11-13, after the owner's seventh review (map editor, bomb, enemy rockets).
 
 ## Where things stand
 
 The owner compares each build with a reference video and changes rules as he goes. Every change
-is recorded in `DESIGN_DECISIONS.md` section 3 (A18 to A34), which overrides the plan where they
+is recorded in `DESIGN_DECISIONS.md` section 3 (A18 to A35), which overrides the plan where they
 disagree.
 
 - **3D look (A20, A32):** three.js, models built from code, walk cycle in the vertex shader, dark
@@ -27,13 +27,19 @@ disagree.
 - **HP bars (A33):** every big rat carries a bar with its HP counting down.
 - **Weapons (M5, done):** minigun, rocket mode, laser and tank, each with its model, effects,
   sounds and a timer on the HUD. The tank falls in a bubble that only shots open.
-- **Music (A33):** `music/0.mp3` on the menus, `music/1.mp3` to `11.mp3` in the levels, looping,
-  at half the sound-effect level by default.
+- **Music (A35):** `music/0.mp3` on the menus. A map plays the track of its last digit; maps
+  ending in 0 play track 10; boss maps play track 11. Looping, at half the sound-effect level by
+  default. The files are in the repository (Pixabay and Unminus, no attribution needed).
+- **Enemy rockets (A35):** the fat rat, the boss sniper and the robo rat fire rockets down the
+  lane; the swarm shoots them down or loses the cats in the blast.
+- **Bomb (A35):** a rail item that kills the 18 cats nearest it when touched.
+- **Item pictures (A35):** panels and boxes carry pictures, drawn from code in one style.
+- **Map editor (A35):** visual editor with templates, `.fw` save, upload, link and test play.
 - **Screens (A34):** splash menu with volume sliders, clear progress and PLAY; grid of 44 maps
   with locks; pause, defeat and victory panels; a final screen after map 44. Progress and
   volumes are saved in the browser.
 - **Maps:** 44 placeholder maps written by `scripts/gen-maps.mjs`. The owner will replace them
-  with maps made in the map editor.
+  with maps made in the map editor: save `public/maps/<n>.fw` and it takes the place of map n.
 
 ## Milestones
 
@@ -45,9 +51,9 @@ disagree.
 | M3 Streaming and core combat | Done, one check open | Frame rate on a low-end Android phone has not been checked. |
 | M4 Clones | Done | |
 | M5 Weapons and powerups | Done | Minigun, rocket mode, laser, tank and its bubble; weapon boxes and weapon panels. |
-| M6 Big enemies | Partly done | Punches, E6 charge and HP bars are in. Enemy rockets (E4, E7, E8) are not built. |
+| M6 Big enemies | Done | Punches, E6 charge, HP bars, enemy rockets. |
 | M7 Gates | Done, one item open | Panels by touch. The shot-and-crush variant waits for the owner to name its item. |
-| M8 UI and persistence | Done but for the editor | Splash, map grid, pause, defeat, victory, final screen, saved progress and volumes. The map editor button is a placeholder: the owner will specify the editor and its `.fw` file. Best times are not kept. |
+| M8 UI and persistence | Done | Splash, map grid, pause, defeat, victory, final screen, saved progress and volumes, map editor. Best times are not kept. |
 | M9 Assets and audio | Done | Models and sound effects are code; music is the owner's MP3 files. |
 | M10 Content and balance | Placeholder | 44 generated maps, each won by the test bot. Real maps come from the owner. |
 | M11 Hardening and release | Not started | |
@@ -60,17 +66,22 @@ disagree.
   nothing else, and a boss with its table HP (8,000 to 40,000) cannot be shot down at all. So
   the generated maps write their own HP on these rats (`E4-320`, `E5-900` and so on). The table
   values are untouched in `constants.ts`; a map that uses a plain `E5` gets 8,000 HP.
-- **Music tracks.** The 44 maps go round tracks 1 to 11 four times, so map 34 plays track 1. The
-  owner's example said map 34 plays track 4, which is the last digit instead. It is one line to
-  change (`musicTrackFor` in `src/game/Music.ts`).
-- **The `music` folder is not in git.** It is 47 MB and its licence has not been stated. The
-  builds copy it next to the game. Say the word and it is tracked.
+- **The bomb kills cats.** The owner wrote "kills 18 units". It was read as the swarm's own
+  units, which makes the bomb a trap on the rail. `BOMB_HITS_CATS = false` in `constants.ts`
+  turns it into a prize that kills the 18 rats nearest the goal line instead.
+- **Rail items move at the rats' speed.** They were doubled with the rats (12 cells a second),
+  so a panel stays level with the row it was drawn in. `RAIL_ITEM_SPEED_SPEC` makes them faster.
+- **Enemy rocket numbers are mine.** SPEC rockets (200 HP, slower than today's rats) could not
+  be shot down at the present pace; see `ENEMY_ROCKETS`.
+- **Boss music.** The owner's rule is the last digit. Boss maps were given track 11 because he
+  said track 11 sounds like a boss, and maps ending in 0 were given track 10, since 0 is the
+  splash screen.
 - **Punches and the shooter.** A punch that finds fewer clones than it can kill also kills the
   shooter, which loses the level (owner's rule A18: the shooter is not immune).
 
 ## Measurements
 
-- Tests: 205 passing (`npm test`), including a bot that must win each of the 44 maps.
+- Tests: 220 passing (`npm test`), including a bot that must win each of the 44 maps.
 - Browser, Intel UHD integrated graphics, frame rate uncapped: map 1 runs at about 130 fps at
   phone size with device pixel ratio 2. The dev map (a lane full of rats) runs at about 50 fps.
   Not measured again since the weapons were added.
@@ -81,9 +92,8 @@ disagree.
 
 Still open:
 
-- Map editor (the owner will specify it): edits maps visually, saves and loads a `.fw` text
-  file, accepts a link to one, and reports an invalid file with a message.
-- Enemy rockets for E4, E7 and E8.
+- Map editor, next steps if wanted: HP and drop of a single rat from the editor (today they
+  come only from a template or a hand-edited file), undo, and touch testing on a phone.
 - The item that must be shot to release its reward and that kills clones: the owner will name it.
 - Enemy quality and animation remain the owner's first concern; waiting for his view of the
   current look. Candidates: more varied minions, a death pose for big rats, richer explosions.
@@ -119,9 +129,11 @@ Chrome. The folder is not tracked in git.
   `Powerup.ts` drops and rewards, `Projectile.ts` bullets, rockets and explosions, `Weapon.ts`
   laser and tank, `Player.ts`, `Collision.ts`, `Pool.ts`, `Fx.ts`, `rng.ts`, `Input.ts`,
   `maps.ts`, `HUD.ts` (status, HP bars, weapon timers), `Screens.ts` (menus and panels),
-  `Save.ts` (progress and volumes), `Audio.ts` (sound effects), `Music.ts`.
+  `Save.ts` (progress and volumes), `Audio.ts` (sound effects), `Music.ts`, `fw.ts` (the `.fw`
+  map file).
+- `src/editor/Editor.ts`: the map editor.
 - `src/parsers/`: `tokens.ts` (token table), `markdownMapParser.ts`.
-- `src/render/`: `Renderer3D.ts`, `models.ts`, `Batch.ts`, `Sparks.ts`.
+- `src/render/`: `Renderer3D.ts`, `models.ts`, `Batch.ts`, `Sparks.ts`, `icons.ts` (item pictures).
 - `scripts/gen-maps.mjs`: writes the 44 placeholder maps. `scripts/gen-sprites.mjs`: 2D art.
 - `vite.music.ts`: serves the `music` folder in development and copies it into the builds.
 
@@ -136,6 +148,6 @@ guidance is applied in `Renderer3D.ts`. The Pixi skills are not in use.
 - Local repo at `C:\DOWNLOAD\AI projects\free wars`, branch `main`, remote `origin` set to
   `https://github.com/PacifAIst/free-wars.git`. Nothing has been pushed.
 - Not tracked on purpose (see `.gitignore`): `a.png` (third-party reference screenshot), `old/`,
-  `map_maker.xlsx` (contains a personal name in its metadata), `FREE-WARS_PLAN_v2.md`, `music/`.
+  `map_maker.xlsx` (contains a personal name in its metadata), `FREE-WARS_PLAN_v2.md`.
 - `PLAN.md` and `SPEC.md` are unchanged. Where they differ from the build, `DESIGN_DECISIONS.md`
   says so.

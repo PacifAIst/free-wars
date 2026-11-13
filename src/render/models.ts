@@ -607,16 +607,22 @@ export function tankGeometry(): BufferGeometry {
   return shade(merge(parts), 0.7);
 }
 
-/** A rocket, one unit long, nose towards -z: white body, red nose, blue fins. */
-export function rocketGeometry(): BufferGeometry {
+/**
+ * A rocket, one unit long. The swarm's has a white body and blue fins and its nose
+ * points up the lane (-z). An enemy's is grey with dark fins and points down it.
+ */
+export function rocketGeometry(enemy = false): BufferGeometry {
+  const body = enemy ? 0x8e9bb3 : 0xf2f2f7;
+  const fin = enemy ? 0x3d2c2e : 0x3b6cf0;
   const parts = [
-    part(rod(0.11, 0.11, 0.62, 12), 0xf2f2f7, { p: [0, 0, 0.06], r: [Math.PI / 2, 0, 0] }),
+    part(rod(0.11, 0.11, 0.62, 12), body, { p: [0, 0, 0.06], r: [Math.PI / 2, 0, 0] }),
     part(spike(0.11, 0.3, 12), 0xe5383b, { p: [0, 0, -0.4], r: [-Math.PI / 2, 0, 0] }),
     part(rod(0.08, 0.11, 0.08, 12), 0x55617d, { p: [0, 0, 0.41], r: [Math.PI / 2, 0, 0] }),
-    part(box(0.42, 0.03, 0.22), 0x3b6cf0, { p: [0, 0, 0.3] }),
-    part(box(0.03, 0.42, 0.22), 0x3b6cf0, { p: [0, 0, 0.3] }),
+    part(box(0.42, 0.03, 0.22), fin, { p: [0, 0, 0.3] }),
+    part(box(0.03, 0.42, 0.22), fin, { p: [0, 0, 0.3] }),
   ];
-  return merge(parts);
+  const geometry = merge(parts);
+  return enemy ? geometry.rotateY(Math.PI) : geometry;
 }
 
 /** Bullet: a capsule lying along the lane. */

@@ -17,12 +17,17 @@ export const FX_PICKUP = 4;
 export const FX_GATE = 5;
 /** A big rat's punch landed. `size` is the number of cats it killed, `tag` the rat's type. */
 export const FX_PUNCH = 6;
-/** A rocket exploded. `size` is the side of the square it covers, `tag` 1 for a tank rocket. */
+/**
+ * A rocket exploded. `size` is the side of the square it covers. `tag`: 0 a cat's rocket, 1 a tank
+ * rocket, 2 an enemy rocket that reached the swarm, 3 an enemy rocket shot down.
+ */
 export const FX_BLAST = 7;
 /** The laser fires. */
 export const FX_LASER = 8;
 /** The tank rolls out (`tag` 1) or is used up (`tag` 0). */
 export const FX_TANK = 9;
+/** A bomb went off. `size` is the number of units it killed. */
+export const FX_BOMB = 10;
 
 const LIFE: readonly number[] = [
   HIT_FLASH_SECONDS * 2,
@@ -31,6 +36,7 @@ const LIFE: readonly number[] = [
   FX_PUFF_SECONDS,
   FX_PICKUP_SECONDS,
   FX_PICKUP_SECONDS,
+  FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,

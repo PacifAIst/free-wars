@@ -209,7 +209,7 @@ describe('errors', () => {
   });
 
   it('reports every bad cell, each with its own position', () => {
-    const errors = parseBad(file([row('E1', 'Q', 'E1', 'G5', 'G5'), row('E4-P9')]));
+    const errors = parseBad(file([row('E1', 'Q', 'E1', 'G5', 'G5'), row('E4-P10')]));
     expect(errors.map((e) => [e.line, e.column])).toEqual([
       [13, 2],
       [13, 5],

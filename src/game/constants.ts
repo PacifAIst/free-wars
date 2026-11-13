@@ -68,6 +68,13 @@ export interface EnemyStats {
  */
 export const BIG_HP_FACTOR = 4;
 
+/**
+ * Speed of the panels on the rails, as a SPEC speed value. 10 is the march speed
+ * of the minions, so a panel stays level with the row it was written in. A
+ * larger value makes the panels run ahead of the rats.
+ */
+export const RAIL_ITEM_SPEED_SPEC = MARCH_SPEED_SPEC;
+
 /** Indexed by enemy type 1..8. Index 0 is unused. */
 export const ENEMY_STATS: readonly EnemyStats[] = [
   { w: 0, h: 0, hp: 0, speedSpec: 0, boss: false },
@@ -80,7 +87,7 @@ export const ENEMY_STATS: readonly EnemyStats[] = [
   { w: cells(20), h: cells(20), hp: 4000 * BIG_HP_FACTOR, speedSpec: 5, boss: true }, // E7 boss sniper
   // E8 would be 60 cells wide at twice its SPEC size; it is as wide as the lane instead.
   { w: cells(30), h: cells(30), hp: 10000 * BIG_HP_FACTOR, speedSpec: 5, boss: true }, // E8 robo rat
-  { w: cells(8), h: cells(2), hp: 1, speedSpec: 10, boss: false }, // rail gate (GATE_TYPE)
+  { w: cells(8), h: cells(2), hp: 1, speedSpec: RAIL_ITEM_SPEED_SPEC, boss: false }, // rail gate (GATE_TYPE)
 ];
 
 export const ENEMY_TYPE_COUNT = 8;
@@ -132,19 +139,39 @@ export const SEPARATION_STIFFNESS = 0.7;
 /** `ER` picks uniformly among the first N enemy types (E1-E3). */
 export const RANDOM_MINION_TYPES = 3;
 
-// E4 / E7 / E8 rockets (SPEC 7, D6, D7)
-export const E4_ROCKET_INTERVAL = 8;
-export const E7_ROCKET_INTERVAL = 4;
-export const E8_ROCKET_INTERVAL = 2;
-export const E4_ROCKET_HP = 50;
-export const E4_ROCKET_SPEED = 3.0;
-export const E4_ROCKET_AOE = 8;
-export const E7_ROCKET_HP = 200;
-export const E7_ROCKET_SPEED = 3.0;
-export const E7_ROCKET_AOE = 20;
-export const E8_ROCKET_HP = 200;
-export const E8_ROCKET_SPEED_SPEC = 50;
-export const E8_ROCKET_AOE = 20;
+/**
+ * Enemy rockets (SPEC 7.2, D6, D7). The fat rat and the two rocket bosses fire
+ * a rocket straight down the lane at intervals. A rocket that reaches the swarm
+ * kills every cat in a square of side `aoe` round it, the shooter included.
+ * Shots that hit it wear its HP down; at 0 it bursts harmlessly.
+ *
+ * Speeds and HP are set for the present pace of the game: SPEC and D7 gave 50
+ * and 200 HP and 3 cells a second, which at 12 cells a second of march would
+ * make a rocket slower than the rat that fired it and impossible to shoot down.
+ */
+export interface EnemyRocketStats {
+  /** Seconds between rockets. The first comes after half of it. */
+  readonly interval: number;
+  readonly hp: number;
+  /** Cells per second. */
+  readonly speed: number;
+  /** Side of the square it clears. */
+  readonly aoe: number;
+}
+/** Indexed by enemy type; null for the types that fire nothing. */
+export const ENEMY_ROCKETS: readonly (EnemyRocketStats | null)[] = [
+  null,
+  null,
+  null,
+  null,
+  { interval: 8, hp: 20, speed: 30, aoe: 8 * UNIT },
+  null,
+  null,
+  { interval: 4, hp: 30, speed: 30, aoe: 20 * UNIT },
+  { interval: 2, hp: 24, speed: 40, aoe: 20 * UNIT },
+];
+/** Half the width of an enemy rocket as a target for the swarm's shots. */
+export const ENEMY_ROCKET_HALF_WIDTH = 2 * UNIT;
 
 /**
  * Punches (SPEC 7.3, decision A33). A big rat whose body reaches the swarm winds
@@ -259,7 +286,17 @@ export const DROP_MINIGUN = 5;
 export const DROP_LASER = 6;
 export const DROP_ROCKET = 7;
 export const DROP_TANK = 8;
-export const DROP_CODE_MAX = 8;
+/** A34: a bomb. Not a reward: it goes off when the swarm touches it. */
+export const DROP_BOMB = 9;
+export const DROP_CODE_MAX = 9;
+/** Units a bomb kills. */
+export const BOMB_KILLS = 18;
+/**
+ * Whose units the bomb kills. True: the cats nearest the bomb, which makes it a
+ * trap to steer round. False: the rats nearest the goal line, which makes it a
+ * prize. The owner wrote "kills 18 units"; this is how it was read.
+ */
+export const BOMB_HITS_CATS = true;
 /** Clones granted by drop codes P1..P4. */
 export const CLONE_BOX_AMOUNTS: readonly number[] = [1, 3, 10, 50];
 
@@ -330,10 +367,12 @@ export const SFX_VOLUME = 0.7;
 /** Music plays at this fraction of the sound-effect level (owner's rule: 50% below). */
 export const MUSIC_VOLUME_RATIO = 0.5;
 /**
- * Music tracks for levels: `music/1.mp3` to `music/11.mp3`. Track 0 is kept for
- * the intro screen. The 44 maps go round the 11 tracks four times.
+ * Music (owner's rule). `music/0.mp3` is the splash screen. A map plays the track
+ * of its last digit: map 2 and map 32 play `2.mp3`. A map ending in 0 plays
+ * `10.mp3`. The boss maps 11, 22, 33 and 44 play `11.mp3`, the boss track.
  */
-export const MUSIC_TRACKS = 11;
+export const MUSIC_BOSS_TRACK = 11;
+export const MUSIC_TENS_TRACK = 10;
 
 // --- Presentation (render only; no effect on the simulation) ---------------------
 

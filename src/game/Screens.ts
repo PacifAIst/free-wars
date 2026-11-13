@@ -55,6 +55,8 @@ export class Screens {
     private readonly save: Save,
     private readonly sfx: Sfx,
     private readonly music: Music,
+    /** Opens the map editor. */
+    private readonly onEditor: () => void,
   ) {
     const root = make('div', 'ui', host);
     const panel = (name: string): HTMLDivElement => make('div', `ui-panel ui-${name}`, root);
@@ -70,7 +72,7 @@ export class Screens {
     this.button(splash, 'PLAY', 'ui-button ui-primary', () => this.game.play());
     this.sliders(splash);
     const row = make('div', 'ui-row', splash);
-    this.button(row, 'MAP EDITOR', 'ui-button ui-small', () => this.say('The map editor is coming soon.'));
+    this.button(row, 'MAP EDITOR', 'ui-button ui-small', () => this.onEditor());
     this.clearButton = this.button(row, 'CLEAR PROGRESS', 'ui-button ui-small ui-danger', () => this.clearProgress());
     this.notice = make('div', 'ui-notice', splash);
 
@@ -157,7 +159,8 @@ export class Screens {
     for (const input of this.sfxSliders) input.value = String(Math.round(this.save.sfx * 100));
   }
 
-  private say(text: string): void {
+  /** Shows a line of text on the splash screen. */
+  say(text: string): void {
     this.notice.textContent = text;
   }
 

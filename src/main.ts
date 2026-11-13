@@ -1,4 +1,6 @@
+import { Editor } from './editor/Editor';
 import { Sfx } from './game/Audio';
+import { fwToMapData, parseFw } from './game/fw';
 import { Game } from './game/Game';
 import { Input } from './game/Input';
 import { builtInMaps } from './game/maps';
@@ -22,8 +24,24 @@ function boot(): void {
   input.attach(renderer.canvas);
   const save = new Save();
   const game = new Game(renderer, input, builtInMaps, { levelId, progress: save });
-  const screens = new Screens(host, game, save, sfx, music);
+  const editor = new Editor(host, game, builtInMaps);
+  const screens = new Screens(host, game, save, sfx, music, () => editor.show());
   game.ready();
+
+  // `?fw=<link>` plays the .fw map at that link straight away (decision A35).
+  const link = new URLSearchParams(window.location.search).get('fw');
+  if (link) {
+    screens.say('Loading the map...');
+    fetch(link)
+      .then((response) => (response.ok ? response.text() : ''))
+      .then((text) => {
+        const parsed = parseFw(text);
+        const map = parsed ? fwToMapData(parsed) : null;
+        if (map) game.playCustom(map);
+        else screens.say('Wrong file');
+      })
+      .catch(() => screens.say('The link could not be opened.'));
+  }
 
   // Browsers only allow sound after a touch or a key press.
   window.addEventListener('pointerdown', () => {
@@ -33,7 +51,7 @@ function boot(): void {
   window.addEventListener('keydown', (e) => {
     sfx.unlock();
     music.unlock();
-    if (e.code === 'KeyM' && !e.repeat) {
+    if (e.code === 'KeyM' && !e.repeat && !editor.open) {
       sfx.toggleMute();
       music.setMuted(sfx.isMuted);
     }
@@ -42,6 +60,7 @@ function boot(): void {
   const loop = (now: number): void => {
     game.frame(now);
     screens.update();
+    editor.update();
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

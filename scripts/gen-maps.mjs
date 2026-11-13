@@ -29,7 +29,7 @@ const BOSSES = [
   { token: 'E5-900', name: 'The Bruiser' },
   { token: 'E6-850', name: 'The Charger' },
   { token: 'E7-1500', name: 'The Colonel' },
-  { token: 'E8-2200', name: 'Robo Rat' },
+  { token: 'E8-1300', name: 'Robo Rat' },
 ];
 /** Weapon panels, in the order they are introduced: minigun, rocket, laser. */
 const WEAPONS = ['P5', 'P7', 'P6'];
@@ -59,8 +59,9 @@ function build(n) {
     if (right) row(r)[COLS - 1] = `G1-${right}`;
   };
 
-  // Opening: four pairs of +10 panels.
+  // Opening: four pairs of +10 panels, then a +1 and a +3 so every panel is seen in play.
   for (let i = 0; i < 4; i++) gates(i * 8, 'P3', 'P3');
+  gates(32, 'P1', 'P2');
 
   const waves = 3 + district + Math.floor(step / 4);
   const spacing = 132 - district * 6;
@@ -82,6 +83,8 @@ function build(n) {
     const mid = r + ranks * 2 + 30;
     gates(mid, w % 2 === 1 ? 'P4' : 'P3', offer);
     gates(mid + 8, 'P3', w % 2 === 1 ? 'P4' : 'P3');
+    // Now and then a bomb follows on one rail: touching it costs 18 cats.
+    if (n >= 2 && (n + w) % 3 === 0) gates(mid + 20, w % 2 === 0 ? 'P9' : null, w % 2 === 0 ? null : 'P9');
     r += spacing + ranks * 2;
   }
 

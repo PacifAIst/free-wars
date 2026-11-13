@@ -6,6 +6,7 @@ import {
   COLS,
   E6_CHARGE_RANGE,
   E6_CHARGE_SPEED_SPEC,
+  ENEMY_ROCKETS,
   ENEMY_STATS,
   FUNNEL_END_ROWS,
   FUNNEL_START_ROW,
@@ -22,6 +23,7 @@ import {
 import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
 import { grantDrop, rollDrop, spawnDrop } from './Powerup';
+import { spawnEnemyRocket } from './Projectile';
 
 /** A minion aims at a point at least this far down the lane, so it never turns fully sideways. */
 const MIN_AIM_AHEAD = 0.5;
@@ -47,6 +49,7 @@ export function makeEnemy(): Enemy {
     punches: 0,
     swing: 0,
     cast: 0,
+    reload: 0,
     swept: -1,
     quota: 0,
   };
@@ -76,6 +79,7 @@ function place(sim: SimState, type: number, x: number, row: number, frontY: numb
   e.punches = 0;
   e.swing = 9;
   e.cast = 0;
+  e.reload = (ENEMY_ROCKETS[type]?.interval ?? 0) / 2;
   e.swept = -1;
   e.quota = 0;
   return true;
@@ -187,6 +191,15 @@ export function stepEnemies(sim: SimState): void {
         if (gap > 0 && gap < E6_CHARGE_RANGE) speed = E6_CHARGE_SPEED_SPEC * SPEED_SCALE;
       }
       e.y += speed * SIM_DT;
+      // SPEC 7.2: the fat rat and the rocket bosses fire down the lane once they are in the window.
+      const launcher = ENEMY_ROCKETS[e.type];
+      if (launcher && e.y + e.h / 2 > 0) {
+        e.reload -= SIM_DT;
+        if (e.reload <= 0) {
+          spawnEnemyRocket(sim, e.x, e.y + e.h / 2, launcher);
+          e.reload += launcher.interval;
+        }
+      }
       const step = BIG_CHASE_SPEED * SIM_DT;
       const dx = targetX - e.x;
       e.x += dx > step ? step : dx < -step ? -step : dx;

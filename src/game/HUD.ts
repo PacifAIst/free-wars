@@ -1,13 +1,5 @@
 import type { GameState } from '../types';
-import {
-  BASE_HP,
-  BUILT_IN_LEVELS,
-  LASER_TOTAL_SECONDS,
-  MINIGUN_CAP_SECONDS,
-  ROCKET_CAP_SECONDS,
-  SIM_HZ,
-  TANK_CAP_SECONDS,
-} from './constants';
+import { BASE_HP, BUILT_IN_LEVELS, SIM_HZ } from './constants';
 import type { RenderFrame } from './Game';
 
 interface Banner {
@@ -28,15 +20,17 @@ const POPUPS = 10;
 /** HP bars that can be on screen at once: big rats and tank bubbles. */
 const HP_BARS = 12;
 
-/** The timed weapons, in the order they are shown: name, colour and the seconds that fill the bar. */
-const WEAPONS: readonly [string, string, number][] = [
-  ['MINIGUN', '#f2701d', MINIGUN_CAP_SECONDS],
-  ['ROCKET', '#3b6cf0', ROCKET_CAP_SECONDS],
-  ['LASER', '#e5383b', LASER_TOTAL_SECONDS],
-  ['TANK', '#4f9a3a', TANK_CAP_SECONDS],
+/** The timed weapons, in the order they are shown: name and colour. */
+const WEAPONS: readonly [string, string][] = [
+  ['MINIGUN', '#f2701d'],
+  ['ROCKET', '#3b6cf0'],
+  ['LASER', '#e5383b'],
+  ['TANK', '#4f9a3a'],
 ];
 
 interface WeaponChip {
+  /** The most seconds this weapon has had since it was last picked up from nothing: a full bar. */
+  peak: number;
   root: HTMLDivElement;
   fill: HTMLDivElement;
   label: HTMLDivElement;
@@ -102,7 +96,7 @@ export class HUD {
       const root = element('hud-weapon', weapons);
       const fill = element('hud-weapon-fill', root);
       fill.style.background = color;
-      this.weapons.push({ root, fill, label: element('hud-weapon-label', root) });
+      this.weapons.push({ peak: 0, root, fill, label: element('hud-weapon-label', root) });
     }
 
     for (let i = 0; i < HP_BARS; i++) {
@@ -217,6 +211,7 @@ export class HUD {
       const chip = this.weapons[i];
       const left = inLevel ? seconds_[i] : 0;
       if (left <= 0) {
+        chip.peak = 0;
         if (this.shown.get(chip.root) !== 'off') {
           this.shown.set(chip.root, 'off');
           chip.root.style.display = 'none';
@@ -227,7 +222,9 @@ export class HUD {
         this.shown.set(chip.root, 'on');
         chip.root.style.display = 'block';
       }
-      const width = `${Math.round(Math.min(1, left / WEAPONS[i][2]) * 100)}%`;
+      // A pickup fills the bar; it then runs down. Another pickup tops it up again.
+      if (left > chip.peak) chip.peak = left;
+      const width = `${Math.round((left / chip.peak) * 100)}%`;
       if (this.shown.get(chip.fill) !== width) {
         this.shown.set(chip.fill, width);
         chip.fill.style.width = width;

@@ -284,19 +284,23 @@ describe('punches (SPEC 7.3, A33)', () => {
 });
 
 describe('music (A33)', () => {
-  it('the 44 maps go round the eleven tracks; track 0 is kept for the menus', () => {
+  it('a map plays the track of its last digit; tens play 10 and boss maps play 11', () => {
     expect(musicTrackFor('1')).toBe(1);
     expect(musicTrackFor('2')).toBe(2);
-    expect(musicTrackFor('11')).toBe(11);
-    expect(musicTrackFor('12')).toBe(1);
-    expect(musicTrackFor('34')).toBe(1);
-    expect(musicTrackFor('44')).toBe(11);
+    expect(musicTrackFor('9')).toBe(9);
+    expect(musicTrackFor('10')).toBe(10);
+    expect(musicTrackFor('12')).toBe(2);
+    expect(musicTrackFor('34')).toBe(4);
+    expect(musicTrackFor('40')).toBe(10);
+    // Boss maps.
+    for (const boss of ['11', '22', '33', '44']) expect(musicTrackFor(boss)).toBe(11);
+    // Track 0 is the splash screen: no map plays it.
     for (let n = 1; n <= 44; n++) {
       expect(musicTrackFor(String(n))).toBeGreaterThanOrEqual(1);
       expect(musicTrackFor(String(n))).toBeLessThanOrEqual(11);
     }
     expect(musicTrackFor('0')).toBe(1);
-    expect(musicTrackFor('custom-abc')).toBe(1);
+    expect(musicTrackFor('custom')).toBe(1);
   });
 });
 

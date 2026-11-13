@@ -3,16 +3,23 @@
 // `0.mp3` to `11.mp3`, served beside the game. A missing file is not an error:
 // the level simply has no music.
 
-import { MUSIC_TRACKS, MUSIC_VOLUME_RATIO, SFX_VOLUME } from './constants';
+import { BUILT_IN_LEVELS, MUSIC_BOSS_TRACK, MUSIC_TENS_TRACK, MUSIC_VOLUME_RATIO, SFX_VOLUME } from './constants';
+
+/** Boss maps come every eleventh map: 11, 22, 33, 44. */
+const BOSS_EVERY = 11;
 
 /**
- * The track for a map. Track 0 belongs to the splash screen and the map grid. The 44 built-in
- * maps go round tracks 1 to 11: map 1 plays track 1, map 11 track 11, map 12
- * track 1 again. Any other map (the dev map, a custom map) plays track 1.
+ * The track for a map. Track 0 belongs to the splash screen and the map grid.
+ * A built-in map plays the track of its last digit, a map ending in 0 plays
+ * track 10, and a boss map plays the boss track. Any other map (the dev map,
+ * a map from the editor) plays track 1.
  */
 export function musicTrackFor(mapId: string): number {
   const n = /^\d+$/.test(mapId) ? Number(mapId) : 0;
-  return n >= 1 ? ((n - 1) % MUSIC_TRACKS) + 1 : 1;
+  if (n < 1) return 1;
+  if (n <= BUILT_IN_LEVELS && n % BOSS_EVERY === 0) return MUSIC_BOSS_TRACK;
+  const digit = n % 10;
+  return digit === 0 ? MUSIC_TENS_TRACK : digit;
 }
 
 /** The track of the splash screen and the map grid. */

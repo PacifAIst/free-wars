@@ -401,6 +401,111 @@
         border-bottom: 0;
         border-radius: 50% 50% 0 0;
       }
+      /* Map editor: a bar of buttons, a palette, and a grid that scrolls for ever. */
+      .ed {
+        position: absolute;
+        inset: 0;
+        /* Above the menus and the HUD. */
+        z-index: 5;
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        box-sizing: border-box;
+        background: #0f0d26;
+        color: #fff;
+        font-family: 'Arial Rounded MT Bold', 'Baloo 2', 'Fredoka', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+        font-weight: 900;
+        pointer-events: auto;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .ed.ed-show {
+        display: flex;
+      }
+      .ed-bar,
+      .ed-palette {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .ed-button,
+      .ed-select,
+      .ed-name {
+        font: inherit;
+        font-size: 12px;
+        height: 30px;
+        padding: 0 10px;
+        color: #fff;
+        border-radius: 9px;
+        border: 2px solid #1b1736;
+        background: #4b5396;
+        box-sizing: border-box;
+      }
+      .ed-button {
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      .ed-button.ed-strong {
+        background: #f5a623;
+      }
+      .ed-name {
+        flex: 1 1 110px;
+        min-width: 90px;
+        background: #26234d;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .ed-file {
+        display: none;
+      }
+      .ed-message {
+        min-height: 16px;
+        font-size: 12px;
+        color: #9be7ff;
+      }
+      .ed-tool {
+        width: 40px;
+        height: 40px;
+        padding: 2px;
+        border-radius: 9px;
+        border: 2px solid #1b1736;
+        background: #26234d;
+        cursor: pointer;
+        touch-action: none;
+      }
+      .ed-tool.ed-wide {
+        width: 72px;
+      }
+      .ed-tool canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+      }
+      .ed-tool.ed-on {
+        border-color: #ffd166;
+        background: #5a4d1c;
+        box-shadow: 0 0 0 2px #ffd166;
+      }
+      .ed-scroll {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        border-radius: 8px;
+        background: #1a1838;
+      }
+      .ed-canvas {
+        position: sticky;
+        top: 0;
+        left: 0;
+        display: block;
+        touch-action: none;
+        cursor: crosshair;
+      }
       @keyframes ui-in {
         from {
           opacity: 0;
