@@ -142,7 +142,7 @@ export interface CatLook {
 }
 
 export const CAT_BLACK: CatLook = { fur: 0x3b3f66, furDark: 0x22243f, scarf: 0xff3d4f };
-export const CAT_WHITE: CatLook = { fur: 0xfff3df, furDark: 0xe3cba6, scarf: 0x2f8bff };
+export const CAT_WHITE: CatLook = { fur: 0xe9dcc4, furDark: 0xc4ad88, scarf: 0x2f8bff };
 
 export function catGeometry(look: CatLook, d: number): BufferGeometry {
   const { fur, furDark, scarf } = look;

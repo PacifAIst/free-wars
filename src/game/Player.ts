@@ -2,6 +2,7 @@ import type { ShooterState, SimInput } from '../types';
 import {
   COLS,
   KEY_PAN_SPEED,
+  RAIL_WIDTH,
   SHOOTER_HALF_WIDTH,
   SHOOTER_START_X,
   SIM_DT,
@@ -9,9 +10,12 @@ import {
   SPRING_ZETA,
 } from './constants';
 
-/** Leftmost and rightmost shooter positions: it stops when it touches a barrier (D2). */
-export const SHOOTER_MIN_X = SHOOTER_HALF_WIDTH;
-export const SHOOTER_MAX_X = COLS - SHOOTER_HALF_WIDTH;
+/**
+ * Leftmost and rightmost shooter positions. The swarm may step onto the rails
+ * beside the lane (A29); it stops at their outer walls (D2).
+ */
+export const SHOOTER_MIN_X = -RAIL_WIDTH + SHOOTER_HALF_WIDTH;
+export const SHOOTER_MAX_X = COLS + RAIL_WIDTH - SHOOTER_HALF_WIDTH;
 
 export function createShooter(): ShooterState {
   return { x: SHOOTER_START_X, prevX: SHOOTER_START_X, v: 0, targetX: SHOOTER_START_X, fireCooldown: 0 };

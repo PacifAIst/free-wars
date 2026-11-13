@@ -55,6 +55,13 @@ export interface Enemy {
   row: number;
   /** B7: seconds until a big enemy can kill another cat by contact. */
   contact: number;
+  /**
+   * Gates only (A29). `swept` is -1 until the gate reaches the swarm, then the
+   * position of its front edge at its last kill. `quota` is how many cats it
+   * still has to kill: the ones that stood in its way when it arrived.
+   */
+  swept: number;
+  quota: number;
 }
 
 /** A falling powerup box. */
@@ -79,6 +86,8 @@ export interface Bullet {
 /** Cosmetic effect. Lives in the sim so replays look identical, but never affects play. */
 export interface Fx {
   active: boolean;
+  /** Serial number, so a renderer can tell which effects are new since its last frame. */
+  id: number;
   /** One of the FX_* kinds in Fx.ts. */
   kind: number;
   x: number;
@@ -121,6 +130,8 @@ export interface SimState {
   /** B1: base integrity. */
   baseHp: number;
   kills: number;
+  /** Effects started so far; the serial of the newest one. */
+  fxCount: number;
   /** Bullets fired by the swarm so far. */
   shots: number;
   /** True once the "enemy pool full" warning has been logged. */

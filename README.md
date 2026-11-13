@@ -9,8 +9,10 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 ## Play
 
 - Drag left or right: the swarm follows your finger and fires on its own. You start with one black cat.
-- Powerups come from the gates along both edges of the lane and from the fat rats. Shoot a gate until it breaks, then catch the box it drops to grow the swarm (+1, +3, +10, +50).
-- Rats march straight for the goal. Going to the edge for a powerup leaves the middle open, so choose.
+- Powerups ride the rails on both sides of the lane. Step onto a rail and shoot a panel until it breaks: the swarm grows at once (+1, +3, +10, +50). A panel you fail to break kills every cat in its way.
+- Fat rats drop a box when they die; catch it for more cats.
+- Rats march straight for the goal. Going to a rail leaves the lane open, so choose.
+- M mutes the sound.
 - A rat that touches a cat kills it. Lose every cat and the level is lost.
 - Desktop: arrow keys or A/D also slide; P or Escape pauses; Enter or Space confirms.
 - The gold line at the bottom is the goal: the first rat to cross it loses the level.
@@ -34,8 +36,8 @@ npm run build:single   # dist-single/  one index.html that opens by double-click
 
 ## Art
 
-The game is drawn in 3D with three.js. Every model is built from code in `src/render/models.ts`;
-there are no model or texture files. `npm run gen:sprites` draws the 2D user-interface sheet
+The game is drawn in 3D with three.js. Every model is built from code in `src/render/models.ts`,
+and every sound is synthesised in `src/game/Audio.ts`; there are no model, texture or audio files. `npm run gen:sprites` draws the 2D user-interface sheet
 (icons, portraits, favicon) into `art/ui/`.
 
 ## Licence

@@ -57,17 +57,27 @@ export function rollDrop(sim: SimState): number {
 }
 
 /**
- * Drops a falling box where a gate broke or a fat rat died.
+ * The clone box a drop code stands for.
  *
  * Only clone boxes exist so far. The weapon powerups (codes P5-P8) arrive with
- * milestone M5; until then a weapon code falls as a clone box instead, rolled
- * on the clone-box weights, so a broken gate is never empty-handed.
+ * milestone M5; until then a weapon code counts as a clone box, rolled on the
+ * clone-box weights, so a broken gate is never empty-handed.
  */
+function asCloneBox(sim: SimState, kind: number): number {
+  return isCloneBox(kind) ? kind : DROP_CLONE_1 + pickWeighted(sim, CLONE_BOX_WEIGHTS);
+}
+
+/** Number of clones a drop code is worth. */
+export function rewardAmount(sim: SimState, kind: number): number {
+  return CLONE_BOX_AMOUNTS[asCloneBox(sim, kind) - DROP_CLONE_1];
+}
+
+/** Drops a falling box where a fat rat died. */
 export function spawnDrop(sim: SimState, kind: number, x: number, y: number): void {
   const index = poolAlloc(sim.powerups);
   if (index < 0) return;
   const p = sim.powerups.items[index];
-  p.kind = isCloneBox(kind) ? kind : DROP_CLONE_1 + pickWeighted(sim, CLONE_BOX_WEIGHTS);
+  p.kind = asCloneBox(sim, kind);
   p.x = x;
   p.y = y;
   p.prevY = y;
@@ -75,8 +85,8 @@ export function spawnDrop(sim: SimState, kind: number, x: number, y: number): vo
 
 /**
  * Boxes fall towards the goal line (B8). B9: a box is picked up when it
- * overlaps the formation. Boxes are wide, like the side gates they come from,
- * so the test is the formation's circle against the box's width. A box that
+ * overlaps the formation. Boxes are wide, so the test is the formation's
+ * circle against the box's width. A box that
  * reaches the goal line is lost.
  */
 export function stepPowerups(sim: SimState): void {

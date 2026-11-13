@@ -1,3 +1,4 @@
+import { Sfx } from './game/Audio';
 import { Game } from './game/Game';
 import { Input } from './game/Input';
 import { builtInMaps } from './game/maps';
@@ -7,7 +8,8 @@ function boot(): void {
   const host = document.getElementById('game');
   if (!host) throw new Error('Missing #game element');
 
-  const renderer = new Renderer3D(host);
+  const sfx = new Sfx();
+  const renderer = new Renderer3D(host, sfx);
 
   // Until the level select screen exists (M8), `?map=0` opens the dev map.
   const levelId = new URLSearchParams(window.location.search).get('map') ?? undefined;
@@ -17,6 +19,13 @@ function boot(): void {
   const game = new Game(renderer, input, builtInMaps, { levelId });
   game.ready();
 
+  // Browsers only allow sound after a touch or a key press.
+  window.addEventListener('pointerdown', () => sfx.unlock());
+  window.addEventListener('keydown', (e) => {
+    sfx.unlock();
+    if (e.code === 'KeyM' && !e.repeat) sfx.toggleMute();
+  });
+
   const loop = (now: number): void => {
     game.frame(now);
     requestAnimationFrame(loop);
@@ -25,8 +34,13 @@ function boot(): void {
 
   // Pause when hidden; on return, drop the elapsed time so nothing jumps.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) game.pause();
-    else game.resetClock();
+    if (document.hidden) {
+      game.pause();
+      sfx.suspend();
+    } else {
+      game.resetClock();
+      sfx.unlock();
+    }
   });
 
   if (import.meta.env.DEV) {

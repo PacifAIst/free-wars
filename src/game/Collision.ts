@@ -2,9 +2,11 @@ import type { Enemy, Pool } from '../types';
 import {
   BIG_ENEMY_MIN_TYPE,
   COLS,
+  GATE_TYPE,
   HASH_BUCKET,
   MAX_ENEMY_SIZE,
   MINION_SPACING,
+  RAIL_WIDTH,
   SEPARATION_STIFFNESS,
   WINDOW_ROWS,
 } from './constants';
@@ -13,13 +15,16 @@ import {
  * Uniform spatial hash over the enemies, rebuilt every tick (PLAN section 4).
  * Buckets are HASH_BUCKET gu square. An enemy is listed in every bucket its
  * footprint touches, so a 30x30 boss and a 1x1 minion are found the same way.
+ * It covers the lane and the rail on each side of it.
  *
  * This is scratch data: it is derived from the sim state and never serialised.
  * All arrays are allocated once.
  */
 export class SpatialHash {
+  private readonly minX = -Math.ceil(RAIL_WIDTH / HASH_BUCKET) * HASH_BUCKET;
+  private readonly maxX = COLS + RAIL_WIDTH;
   private readonly minY = -(Math.ceil(MAX_ENEMY_SIZE / HASH_BUCKET) + 1) * HASH_BUCKET;
-  readonly cols = Math.ceil(COLS / HASH_BUCKET);
+  readonly cols = Math.ceil((this.maxX - this.minX) / HASH_BUCKET);
   readonly rows = Math.ceil((WINDOW_ROWS - this.minY) / HASH_BUCKET) + 1;
   /** start[b]..start[b + 1] is the slice of `entries` for bucket b. */
   private readonly start: Int32Array;
@@ -38,7 +43,7 @@ export class SpatialHash {
   }
 
   private bx(x: number): number {
-    const b = Math.floor(x / HASH_BUCKET);
+    const b = Math.floor((x - this.minX) / HASH_BUCKET);
     return b < 0 ? 0 : b >= this.cols ? this.cols - 1 : b;
   }
 
@@ -100,6 +105,7 @@ export class SpatialHash {
    *    shortest way. The big enemy does not move: it ploughs through the crowd.
    *  - Of two big enemies, the one further from `targetX` (where they are both heading)
    *    gives way, so they queue up side by side instead of piling onto one spot.
+   *  - Gates are alone on their rails and take no part.
    *
    * One pass per tick is enough: a dense crowd settles over a few ticks.
    */
@@ -117,9 +123,11 @@ export class SpatialHash {
       for (let m = from; m < to; m++) {
         const i = entries[m];
         const a = items[i];
+        if (a.type === GATE_TYPE) continue;
         for (let n = m + 1; n < to; n++) {
           const j = entries[n];
           const c = items[j];
+          if (c.type === GATE_TYPE) continue;
           // Two enemies can share several buckets. Handle the pair only in the
           // bucket that holds the top-left corner of the area their boxes share,
           // so a pair is never pushed twice in one pass.
@@ -174,10 +182,10 @@ export class SpatialHash {
       }
     }
 
-    // Keep everyone inside the lane.
+    // Keep every rat inside the lane.
     for (let i = 0; i < enemies.high; i++) {
       const e = items[i];
-      if (!e.active) continue;
+      if (!e.active || e.type === GATE_TYPE) continue;
       const half = e.w / 2;
       if (e.x < half) e.x = half;
       else if (e.x > COLS - half) e.x = COLS - half;
@@ -186,11 +194,11 @@ export class SpatialHash {
 
   /**
    * Index of an active enemy whose footprint contains the point, or -1.
-   * When footprints overlap (D10) the one whose front edge is nearest the base
-   * line wins, because that is the one a bullet from below meets first.
+   * When footprints overlap the one whose front edge is nearest the goal line
+   * wins, because that is the one a bullet from below meets first.
    */
   queryPoint(x: number, y: number, enemies: Pool<Enemy>): number {
-    if (x < 0 || x >= COLS) return -1;
+    if (x < this.minX || x >= this.maxX) return -1;
     const b = this.by(y) * this.cols + this.bx(x);
     const { items } = enemies;
     let best = -1;

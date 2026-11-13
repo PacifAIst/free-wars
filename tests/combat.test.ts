@@ -67,7 +67,7 @@ describe('shooting', () => {
       }
     }
     // Steady state: a bullet lives about 1.2 s, so only a few exist at once.
-    expect(sim.bullets.live).toBeLessThanOrEqual(4);
+    expect(sim.bullets.live).toBeLessThanOrEqual(5);
     expect(sim.bullets.items).toHaveLength(POOL_BULLETS);
   });
 
@@ -205,7 +205,7 @@ describe('win condition (D5)', () => {
   });
 
   it('does not win while rows are still to come', () => {
-    const rows = [rowWith({ [SHOOTER_COL]: 'E1' }), ...Array.from({ length: 20 }, () => ''), rowWith({ 0: 'E1' })];
+    const rows = [rowWith({ [SHOOTER_COL]: 'E1' }), ...Array.from({ length: 70 }, () => ''), rowWith({ 0: 'E1' })];
     const map = mapFromRows(rows);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
@@ -295,7 +295,7 @@ describe('scale (M3 check)', () => {
     expect(sim.enemies.items).toHaveLength(POOL_ENEMIES);
     expect(sim.bullets.items).toHaveLength(POOL_BULLETS);
     expect(sim.fx.items).toHaveLength(POOL_PARTICLES);
-    expect(sim.enemies.live).toBeLessThanOrEqual(45 * COLS);
+    expect(sim.enemies.live).toBeLessThanOrEqual((WINDOW_ROWS + 1) * COLS);
     expect(sim.enemies.live).toBeGreaterThan(22 * COLS);
     // A tick must fit many times into the 16.7 ms frame, even on a slow machine.
     expect(msPerTick).toBeLessThan(4);

@@ -12,8 +12,12 @@
 
 /** Lane width in columns. Fixed by the map format. */
 export const COLS = 44;
-/** Rows of the lane that are in play: from the top of the window to the base line. */
-export const WINDOW_ROWS = 44;
+/**
+ * Rows of the lane that are in play: from the line where rows enter and bullets
+ * expire, down to the goal line. The plan started with 44. With the camera of
+ * decision A29 that left most of a phone screen out of play, so it is twice as deep.
+ */
+export const WINDOW_ROWS = 88;
 
 // --- Simulation loop (SPEC section 4) ----------------------------------------
 
@@ -27,11 +31,11 @@ export const MAX_RENDER_RESOLUTION = 2;
 // --- D1: speeds ----------------------------------------------------------------
 
 /**
- * Converts SPEC speed values to gu/s. Spec 10 -> 2.0 gu/s (44 rows in 22 s).
- * The plan started at 0.075; the owner found that far too slow next to the
- * reference video (decision A18).
+ * Converts SPEC speed values to gu/s. Spec 10 -> 3 gu/s: a minion crosses the
+ * 88 rows in play in about half a minute. The plan started at 0.075; the owner
+ * found that far too slow next to the reference video (decisions A18, A29).
  */
-export const SPEED_SCALE = 0.2;
+export const SPEED_SCALE = 0.3;
 /** Speed at which the row stream advances: the E1-E3 march speed. */
 export const MARCH_SPEED_SPEC = 10;
 export const MARCH_SPEED = MARCH_SPEED_SPEC * SPEED_SCALE;
@@ -60,7 +64,7 @@ export const ENEMY_STATS: readonly EnemyStats[] = [
   { w: 20, h: 20, hp: 3000, speedSpec: 10, boss: true }, // E6 charger
   { w: 20, h: 20, hp: 4000, speedSpec: 5, boss: true }, // E7 boss sniper
   { w: 30, h: 30, hp: 10000, speedSpec: 5, boss: true }, // E8 robo rat
-  { w: 4, h: 1, hp: 1, speedSpec: 10, boss: false }, // side gate (GATE_TYPE); HP is its resistance
+  { w: 8, h: 2, hp: 1, speedSpec: 10, boss: false }, // rail gate (GATE_TYPE); HP is its resistance
 ];
 
 export const ENEMY_TYPE_COUNT = 8;
@@ -77,13 +81,20 @@ export const MINION_CHASE_SPEED = 0;
 export const BIG_ENEMY_MIN_TYPE = 4;
 
 /**
- * Side gates (SPEC section 10, decision A27). A gate fills the four-cell strip
- * at one edge of the lane, marches down with its row, soaks up bullets, and
- * drops a powerup box when its resistance is used up. It shares the enemy
- * pool under this type number.
+ * Rails and gates (SPEC section 10, decisions A27 and A29). A rail runs along
+ * each side of the lane, outside its wall. Only gates travel on it: panels that
+ * march down with their row, soak up bullets, and reward the swarm when their
+ * resistance is used up. A gate that reaches the cats unbroken kills every cat
+ * in its way. Cats may step onto a rail; rats never do. A gate shares the
+ * enemy pool under this type number.
  */
 export const GATE_TYPE = 9;
-export const GATE_WIDTH = 4;
+export const RAIL_WIDTH = 8;
+/** A gate fills its rail from side to side. */
+export const GATE_WIDTH = RAIL_WIDTH;
+/** Lane coordinates of the centre line of the left and right rail. */
+export const RAIL_LEFT_X = -RAIL_WIDTH / 2;
+export const RAIL_RIGHT_X = COLS + RAIL_WIDTH / 2;
 /** Minions start to swing towards the swarm at this lane row and aim fully at it FUNNEL_END_ROWS above the shooter. */
 export const FUNNEL_START_ROW = 6;
 export const FUNNEL_END_ROWS = 5;
@@ -123,7 +134,7 @@ export const E6_CHARGE_SPEED_SPEC = 20;
 // --- D4: row streaming ---------------------------------------------------------
 
 /** At level start the front line is already this many rows below the window top. */
-export const PRE_ADVANCE_ROWS = 12;
+export const PRE_ADVANCE_ROWS = 34;
 
 // --- Player (SPEC 5, 6, 8; D2, D3, D8) -----------------------------------------
 
@@ -143,7 +154,7 @@ export const CLONE_CAP = 100;
 export const RING_SLOTS_PER_RING = 6;
 export const RING_SPACING = 1;
 
-export const BULLET_SPEED = 30;
+export const BULLET_SPEED = 45;
 export const BULLET_DAMAGE = 1;
 /** Bullets leave the muzzle this far above the shooter centre. */
 export const MUZZLE_OFFSET = 0.6;
@@ -233,8 +244,8 @@ export const CONTACT_DAMAGE = 1;
 export const POWERUP_SPEED = 6.0;
 /** B9: a box is picked up this far outside the outermost clone ring, along the lane. */
 export const PICKUP_MARGIN = 0.8;
-/** Boxes are as wide as the side gates they come from (A27). */
-export const POWERUP_WIDTH = 4;
+/** Width of a falling box, dropped by the fat rats (A29: twice the first size). */
+export const POWERUP_WIDTH = 8;
 /** A cat is touched by an enemy that comes within this distance of its centre (A28). */
 export const CAT_RADIUS = 0.45;
 /** B11: incoming enemy HP/s stays under this fraction of achievable DPS. */
@@ -269,15 +280,22 @@ export const FX_PICKUP_SECONDS = 0.6;
 
 // --- Presentation (render only; no effect on the simulation) ---------------------
 
-/** Columns visible across the screen at the shooter's depth on a portrait screen. */
-export const VIEW_COLS = 30;
+/**
+ * Camera (A29): high above and well back, like the reference game, so the whole
+ * lane and both rails are in view and perspective is mild.
+ * VIEW_COLS is the width seen across a portrait screen at the shooter's depth.
+ */
+export const VIEW_COLS = COLS + 2 * RAIL_WIDTH + 3;
 /** Camera rig, in gu, relative to the shooter: height above the lane and distance behind. */
-export const CAMERA_HEIGHT = 74;
-export const CAMERA_BACK = 46;
-/** The camera looks at a point this far up the lane from the shooter. */
-export const CAMERA_AHEAD = 18;
+export const CAMERA_HEIGHT = 150;
+export const CAMERA_BACK = 72;
+/** The camera is aimed so the goal line sits this many rows above the bottom edge of the screen. */
+export const CAMERA_GOAL_MARGIN = 5;
 /** Vertical field of view never drops below this (degrees), so wide screens still see the whole window. */
-export const CAMERA_MIN_FOV = 34;
+export const CAMERA_MIN_FOV = 26;
+/** How quickly a clone eases to its place in the formation, per second. Outer rings trail a little. */
+export const CLONE_EASE = 13;
+export const CLONE_EASE_RING_LAG = 1.1;
 /** Units are drawn larger than a cell so the crowd overlaps and reads as a mass. */
 export const UNIT_DRAW_SCALE = 1.42;
 export const SHOOTER_DRAW_SCALE = 1.7;
@@ -288,7 +306,7 @@ export const BIG_HEIGHT_SCALE = 0.66;
 /** Rows beyond the top of the window that are drawn as a look-ahead (decision A9). */
 export const PREVIEW_ROWS = 22;
 /** Real shadow map for big enemies and walls. Minions always use contact-shadow discs. */
-export const SHADOW_MAP_SIZE = 1024;
+export const SHADOW_MAP_SIZE = 2048;
 
 // --- Persistence ---------------------------------------------------------------
 

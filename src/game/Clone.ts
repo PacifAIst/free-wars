@@ -64,7 +64,7 @@ export function formationRadius(count: number): number {
   return ringsFor(count) * RING_SPACING;
 }
 
-/** Lane position of clone `slot`. D2: slots that would leave the lane are squeezed inward. */
+/** Lane position of clone `slot`. D2: slots that would pass the outer walls are squeezed inward. */
 export function cloneX(sim: SimState, slot: number): number {
   const x = sim.shooter.x + SLOT_X[slot];
   return x < SHOOTER_MIN_X ? SHOOTER_MIN_X : x > SHOOTER_MAX_X ? SHOOTER_MAX_X : x;
@@ -96,27 +96,92 @@ export function fireClones(sim: SimState): void {
   }
 }
 
+/** One cat dies. Returns false when it was the last one, which loses the level. */
+function loseCat(sim: SimState, x: number, y: number): boolean {
+  spawnFx(sim, FX_CAT, x, y, 1);
+  if (sim.clones === 0) {
+    sim.phase = 'lost';
+    sim.lossReason = 'swarm';
+    return false;
+  }
+  // A dead shooter is replaced by the oldest clone; either way the swarm is one smaller.
+  sim.clones--;
+  return true;
+}
+
 /**
- * Contact trades (D12, as changed by the owner in decisions A18 and A28): an
- * enemy that touches any cat, clone or shooter, kills it and takes
- * CONTACT_DAMAGE. The black shooter is not immune. When it dies the oldest clone is promoted, which leaves one clone
- * fewer; with no clone left the level is lost.
+ * Gates crush (A29): a gate that reaches the swarm unbroken kills every cat in
+ * its way and carries on.
+ *
+ * When its front edge reaches the formation, the gate counts the cats standing
+ * within its width. Those are its victims. It then kills them one by one as
+ * it ploughs through, so the losses are spread over the pass. The cats beside
+ * it are untouched, and closing ranks behind it saves nobody.
+ */
+function stepGates(sim: SimState): void {
+  const enemies = sim.enemies.items;
+  for (let i = 0; i < sim.enemies.high; i++) {
+    const gate = enemies[i];
+    if (!gate.active || gate.type !== GATE_TYPE) continue;
+    const front = gate.y + gate.h / 2;
+    const reach = gate.w / 2 + CAT_RADIUS;
+
+    if (gate.swept < 0) {
+      const radius = formationRadius(sim.clones);
+      if (front < SHOOTER_Y - radius - CAT_RADIUS) continue;
+      // It has arrived: count the cats in its way, the shooter included.
+      let victims = Math.abs(sim.shooter.x - gate.x) < reach ? 1 : 0;
+      for (let slot = 0; slot < sim.clones; slot++) {
+        if (Math.abs(cloneX(sim, slot) - gate.x) < reach) victims++;
+      }
+      gate.quota = victims;
+      // `contact` holds how far the gate advances between two kills.
+      gate.contact = victims > 0 ? (2 * radius + 1) / victims : 0;
+      gate.swept = front - gate.contact;
+    }
+
+    while (gate.quota > 0 && front - gate.swept >= gate.contact) {
+      gate.swept += gate.contact;
+      gate.quota--;
+      // Show the loss on a cat that is actually under the gate, if one still is.
+      let x = sim.shooter.x;
+      let y = SHOOTER_Y;
+      for (let slot = sim.clones - 1; slot >= 0; slot--) {
+        const cx = cloneX(sim, slot);
+        if (Math.abs(cx - gate.x) < reach) {
+          x = cx;
+          y = cloneY(slot);
+          break;
+        }
+      }
+      if (!loseCat(sim, x, y)) return;
+    }
+  }
+}
+
+/**
+ * Contact (D12, as changed by the owner in decisions A18, A28 and A29).
+ *
+ * A rat that touches any cat, clone or shooter, kills it and takes
+ * CONTACT_DAMAGE. Every cat has a body: the rat only has to touch its outline.
+ * The black shooter is not immune; when it dies the oldest clone is promoted,
+ * and with no clone left the level is lost.
  *
  * B7: an enemy 8x8 or larger kills at most BIG_CONTACT_RATE cats per second.
  */
 export function stepContact(sim: SimState, hash: SpatialHash): void {
+  stepGates(sim);
+  if (sim.phase !== 'playing') return;
+
   const enemies = sim.enemies.items;
   // Outermost slot first, down to -1, which stands for the shooter itself.
   for (let slot = sim.clones - 1; slot >= -1; slot--) {
     const x = slot < 0 ? sim.shooter.x : cloneX(sim, slot);
     const y = slot < 0 ? SHOOTER_Y : cloneY(slot);
-    // Every cat has a body: an enemy touches it when their outlines meet,
-    // not only when it steps on the cat's exact centre.
     const found = hash.queryRect(x - CAT_RADIUS, y - CAT_RADIUS, x + CAT_RADIUS, y + CAT_RADIUS, sim.enemies, touching);
     let hit = -1;
     for (let n = 0; n < found && hit < 0; n++) {
       const enemy = enemies[touching[n]];
-      // Gates do not hurt, and a big enemy can only kill so many cats per second (B7).
       if (enemy.type === GATE_TYPE) continue;
       if (enemy.w >= BIG_CONTACT_MIN_SIZE && enemy.contact > 0) continue;
       hit = touching[n];
@@ -125,15 +190,8 @@ export function stepContact(sim: SimState, hash: SpatialHash): void {
 
     const enemy = enemies[hit];
     if (enemy.w >= BIG_CONTACT_MIN_SIZE) enemy.contact = 1 / BIG_CONTACT_RATE;
-
-    spawnFx(sim, FX_CAT, x, y, 1);
     damageEnemy(sim, hit, CONTACT_DAMAGE, x, y);
-    if (sim.clones === 0) {
-      sim.phase = 'lost';
-      sim.lossReason = 'swarm';
-      return;
-    }
-    sim.clones--;
+    if (!loseCat(sim, x, y)) return;
   }
 }
 

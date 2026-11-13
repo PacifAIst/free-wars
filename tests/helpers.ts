@@ -55,6 +55,8 @@ export function activeEnemies(sim: SimState): Enemy[] {
  *
  *  1. With time to spare before the rats reach the goal line, catch a falling
  *     box, or else go and break the nearest gate.
+ *     It stays off a rail when the gate coming down it is too tough to break
+ *     before it arrives, because an unbroken gate kills the cats in its way.
  *  2. Otherwise the rats come first. Sweep: move the swarm over the nearest column that still has
  *     rats of the leading band, a swarm-width at a time, and hold until it is clear.
  */
@@ -80,10 +82,19 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
   const firepower = FIRE_RATE * (1 + sim.clones * CLONE_FIRE_RATE_FACTOR);
   const secondsNeeded = (rats / firepower) * 1.8 + 3;
 
+  // The nearest gate that can be broken before it reaches the swarm, and whether any gate is a threat.
   let gate: Enemy | null = null;
+  let threat = false;
   for (const e of sim.enemies.items) {
-    if (!e.active || e.type !== GATE_TYPE || e.y > SHOOTER_Y - 1.5 || e.y < 0) continue;
-    if (gate === null || Math.abs(e.x - x) < Math.abs(gate.x - x)) gate = e;
+    if (!e.active || e.type !== GATE_TYPE || e.y < 0) continue;
+    const rowsAway = SHOOTER_Y - radius - 1 - (e.y + e.h / 2);
+    if (rowsAway < -2 * radius - 4) continue;
+    const breakable = e.hp / firepower < rowsAway / MARCH_SPEED - 1;
+    if (!breakable) {
+      if (rowsAway < 14 && Math.abs(e.x - x) < e.w / 2 + radius + 1) threat = true;
+      continue;
+    }
+    if (rowsAway > 0 && (gate === null || Math.abs(e.x - x) < Math.abs(gate.x - x))) gate = e;
   }
 
   const spare = secondsLeft > secondsNeeded + 2;
@@ -104,10 +115,13 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
       }
     }
     // Step past it by most of the swarm's width, so each stop covers fresh columns.
-    goal = best <= 0.6 ? x : column + Math.sign(column - x) * radius * 0.7;
+    // A column is under fire only when a cat stands in it.
+    goal = best < 0.45 ? x : column + Math.sign(column - x) * radius * 0.7;
   }
 
-  const delta = Math.max(0.5, Math.min(COLS - 0.5, goal)) - x;
+  // Keep the whole swarm on the lane when a gate that cannot be broken is bearing down.
+  if (threat) goal = Math.max(radius + 1.5, Math.min(COLS - radius - 1.5, goal));
+  const delta = goal - x;
   out.targetDelta = Math.max(-0.6, Math.min(0.6, delta));
   out.keyDir = 0;
   return out;

@@ -1,5 +1,5 @@
 import type { Enemy, SimState } from '../types';
-import { formationRadius } from './Clone';
+import { addClones, formationRadius } from './Clone';
 import {
   BIG_CHASE_SPEED,
   BIG_ENEMY_MIN_TYPE,
@@ -10,14 +10,16 @@ import {
   GATE_TYPE,
   HIT_FLASH_SECONDS,
   MINION_CHASE_SPEED,
+  RAIL_LEFT_X,
+  RAIL_RIGHT_X,
   SHOOTER_Y,
   SIM_DT,
   SPEED_SCALE,
   WINDOW_ROWS,
 } from './constants';
-import { FX_BASE, FX_HIT, FX_KILL, spawnFx } from './Fx';
+import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
-import { rollDrop, spawnDrop } from './Powerup';
+import { rewardAmount, rollDrop, spawnDrop } from './Powerup';
 
 /** A minion aims at a point at least this far down the lane, so it never turns fully sideways. */
 const MIN_AIM_AHEAD = 0.5;
@@ -39,7 +41,34 @@ export function makeEnemy(): Enemy {
     flash: 0,
     row: 0,
     contact: 0,
+    swept: -1,
+    quota: 0,
   };
+}
+
+function place(sim: SimState, type: number, x: number, row: number, frontY: number, hp: number, drop: number): boolean {
+  const index = poolAlloc(sim.enemies);
+  if (index < 0) return false;
+  const stats = ENEMY_STATS[type];
+  const e = sim.enemies.items[index];
+  e.type = type;
+  e.w = stats.w;
+  e.h = stats.h;
+  e.x = x;
+  e.prevX = x;
+  e.y = frontY - stats.h / 2;
+  e.speed = stats.speedSpec * SPEED_SCALE;
+  // One tick behind, so the first interpolated frame is already in motion.
+  e.prevY = e.y - e.speed * SIM_DT;
+  e.hp = hp > 0 ? hp : stats.hp;
+  e.maxHp = e.hp;
+  e.drop = drop;
+  e.flash = 0;
+  e.row = row;
+  e.contact = 0;
+  e.swept = -1;
+  e.quota = 0;
+  return true;
 }
 
 /**
@@ -58,32 +87,27 @@ export function spawnEnemy(
   hpOverride: number,
   drop: number,
 ): boolean {
-  const index = poolAlloc(sim.enemies);
-  if (index < 0) return false;
-  const stats = ENEMY_STATS[type];
-  const e = sim.enemies.items[index];
-  e.type = type;
-  e.w = stats.w;
-  e.h = stats.h;
-  e.x = Math.min(left, COLS - stats.w) + stats.w / 2;
-  e.prevX = e.x;
-  e.y = frontY - stats.h / 2;
-  e.speed = stats.speedSpec * SPEED_SCALE;
-  // One tick behind, so the first interpolated frame is already in motion.
-  e.prevY = e.y - e.speed * SIM_DT;
-  e.hp = hpOverride > 0 ? hpOverride : stats.hp;
-  e.maxHp = e.hp;
-  e.drop = drop;
-  e.flash = 0;
-  e.row = row;
-  e.contact = 0;
-  return true;
+  const { w } = ENEMY_STATS[type];
+  return place(sim, type, Math.min(left, COLS - w) + w / 2, row, frontY, hpOverride, drop);
+}
+
+/** Places a gate on the left rail (`side` < 0) or the right rail. `resistance` is its HP. */
+export function spawnGate(
+  sim: SimState,
+  side: number,
+  row: number,
+  frontY: number,
+  resistance: number,
+  drop: number,
+): boolean {
+  return place(sim, GATE_TYPE, side < 0 ? RAIL_LEFT_X : RAIL_RIGHT_X, row, frontY, resistance, drop);
 }
 
 /**
- * Applies damage. Returns true if the enemy died.
+ * Applies damage. Returns true if the enemy died or the gate broke.
  *
- * SPEC 7.4: a dying enemy drops its authored powerup; E4 and E8 without one
+ * A27, A29: a broken gate rewards the swarm on the spot. SPEC 7.4: a dying
+ * enemy drops its authored powerup as a falling box; E4 and E8 without one
  * roll a random drop.
  */
 export function damageEnemy(sim: SimState, index: number, amount: number, hitX: number, hitY: number): boolean {
@@ -94,8 +118,14 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
     spawnFx(sim, FX_HIT, hitX, hitY, 1);
     return false;
   }
-  // Gates and the fat rats (E4, E8) always drop something; other enemies only an authored drop.
-  const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 || e.type === GATE_TYPE ? rollDrop(sim) : 0;
+  if (e.type === GATE_TYPE) {
+    const clones = rewardAmount(sim, e.drop > 0 ? e.drop : rollDrop(sim));
+    addClones(sim, clones);
+    spawnFx(sim, FX_GATE, e.x, e.y, clones);
+    poolFree(sim.enemies, index);
+    return true;
+  }
+  const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
   if (drop > 0) spawnDrop(sim, drop, e.x, Math.max(0, e.y));
   spawnFx(sim, FX_KILL, e.x, e.y, e.w);
   poolFree(sim.enemies, index);
@@ -106,18 +136,16 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
 /**
  * Moves every enemy one tick and resolves arrivals at the goal line.
  *
- * Pursuit (A19): enemies go for the swarm, as crowds do in the reference
- * video. A big enemy marches down and steers sideways at the shooter. A minion
- * runs at its march speed along the line towards the swarm: far up the lane
- * that is almost straight down, so the army keeps the shape drawn in the map;
- * closer in, the line swings towards the cats and the crowd closes on them.
- * A minion that is already in front of the swarm, or has passed it, runs
- * straight for the goal line. Enemies do not overlap: `SpatialHash.separate`
- * pushes them apart after this step.
+ * A28: every rat marches straight for the goal line. The pursuit of decision
+ * A19 is still here, switched off by its two chase-speed constants: with a
+ * speed above zero a big enemy steers sideways at the shooter, and a minion
+ * runs along the line towards the swarm. Enemies do not overlap:
+ * `SpatialHash.separate` pushes them apart after this step.
  *
  * B1: an enemy that reaches the goal line takes its remaining HP out of the
  * base and is destroyed. With BASE_HP at 1 the goal has no lives, so the first
- * enemy to cross loses the level. A boss (E5-E8) always loses it at once.
+ * enemy to cross loses the level. A boss (E5-E8) always loses it at once. A
+ * gate that reaches the line is only a missed reward.
  */
 export function stepEnemies(sim: SimState): void {
   const { items } = sim.enemies;
@@ -133,6 +161,13 @@ export function stepEnemies(sim: SimState): void {
     if (!e.active) continue;
     e.prevX = e.x;
     e.prevY = e.y;
+    if (e.flash > 0) e.flash -= SIM_DT;
+
+    if (e.type === GATE_TYPE) {
+      e.y += e.speed * SIM_DT;
+      if (e.y + e.h / 2 >= WINDOW_ROWS) poolFree(sim.enemies, i);
+      continue;
+    }
 
     if (e.type >= BIG_ENEMY_MIN_TYPE) {
       e.y += e.speed * SIM_DT;
@@ -164,15 +199,9 @@ export function stepEnemies(sim: SimState): void {
     if (e.x < half) e.x = half;
     else if (e.x > COLS - half) e.x = COLS - half;
 
-    if (e.flash > 0) e.flash -= SIM_DT;
     if (e.contact > 0) e.contact -= SIM_DT;
     if (e.y + e.h / 2 < WINDOW_ROWS) continue;
 
-    if (e.type === GATE_TYPE) {
-      // A gate that was not broken in time is simply a missed powerup.
-      poolFree(sim.enemies, i);
-      continue;
-    }
     if (ENEMY_STATS[e.type].boss) {
       sim.phase = 'lost';
       sim.lossReason = 'boss';

@@ -13,6 +13,8 @@ export const FX_BASE = 2;
 export const FX_CAT = 3;
 /** A clone box was picked up. `size` is the number of clones it gave. */
 export const FX_PICKUP = 4;
+/** A gate was broken. `size` is the number of clones it gave. */
+export const FX_GATE = 5;
 
 const LIFE: readonly number[] = [
   HIT_FLASH_SECONDS * 2,
@@ -20,10 +22,11 @@ const LIFE: readonly number[] = [
   FX_BURST_SECONDS,
   FX_PUFF_SECONDS,
   FX_PICKUP_SECONDS,
+  FX_PICKUP_SECONDS,
 ];
 
 export function makeFx(): Fx {
-  return { active: false, kind: 0, x: 0, y: 0, age: 0, life: 0, size: 0 };
+  return { active: false, id: 0, kind: 0, x: 0, y: 0, age: 0, life: 0, size: 0 };
 }
 
 /** Starts an effect. Silently does nothing when the pool is full. */
@@ -31,6 +34,7 @@ export function spawnFx(sim: SimState, kind: number, x: number, y: number, size:
   const index = poolAlloc(sim.fx);
   if (index < 0) return;
   const fx = sim.fx.items[index];
+  fx.id = ++sim.fxCount;
   fx.kind = kind;
   fx.x = x;
   fx.y = y;

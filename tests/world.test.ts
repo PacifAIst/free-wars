@@ -4,6 +4,10 @@ import {
   DROP_CLONE_10,
   GATE_TYPE,
   GATE_WIDTH,
+  RAIL_LEFT_X,
+  RAIL_RIGHT_X,
+  SHOOTER_Y,
+  WINDOW_ROWS,
   ENEMY_STATS,
   FUNNEL_START_ROW,
   MARCH_SPEED,
@@ -47,7 +51,7 @@ describe('row streaming (D4)', () => {
     const map = mapFromRows(Array.from({ length: 60 }, (_, i) => rowWith({ [i % 2 === 0 ? 0 : 43]: 'E1' })));
     const scratch = createScratch();
     // Tick counts chosen so the scroll is not on a row boundary.
-    for (const ticks of [100, 250, 400]) {
+    for (const ticks of [90, 250, 410]) {
       const sim = createSim(map, 1, LONE);
       run(sim, map, scratch, ticks);
       const scroll = PRE_ADVANCE_ROWS + ticks * MARCH_SPEED * SIM_DT;
@@ -71,7 +75,7 @@ describe('row streaming (D4)', () => {
   it('never spawns the whole map at once', () => {
     const map = mapFromRows(Array.from({ length: 4444 }, () => fullRow('E1')));
     const sim = createSim(map, 1);
-    expect(sim.enemies.live).toBe(13 * COLS);
+    expect(sim.enemies.live).toBe((PRE_ADVANCE_ROWS + 1) * COLS);
     const scratch = createScratch();
     let peak = 0;
     for (let i = 0; i < 30 * SIM_HZ && sim.phase === 'playing'; i++) {
@@ -79,9 +83,9 @@ describe('row streaming (D4)', () => {
       peak = Math.max(peak, sim.enemies.live);
     }
     // At most the rows inside the 44-row window, plus the one entering.
-    expect(peak).toBeLessThanOrEqual(45 * COLS);
+    expect(peak).toBeLessThanOrEqual((WINDOW_ROWS + 1) * COLS);
     expect(sim.enemies.items).toHaveLength(POOL_ENEMIES);
-    expect(sim.nextRow).toBeLessThan(60);
+    expect(sim.nextRow).toBeLessThan(WINDOW_ROWS + 30);
   });
 
   it('treats empty rows as gaps in the march', () => {
@@ -99,12 +103,12 @@ describe('enemy placement', () => {
     const [e4, e5] = [4, 5].map((t) => activeEnemies(sim).find((e) => e.type === t)!);
     expect([e4.w, e4.h]).toEqual([8, 8]);
     expect(e4.x - e4.w / 2).toBe(4);
-    expect(e4.y + e4.h / 2).toBeCloseTo(12, 9);
+    expect(e4.y + e4.h / 2).toBeCloseTo(PRE_ADVANCE_ROWS, 9);
     expect([e5.w, e5.h]).toEqual([20, 20]);
     expect(e5.x - e5.w / 2).toBe(10);
-    expect(e5.y + e5.h / 2).toBeCloseTo(2, 9);
+    expect(e5.y + e5.h / 2).toBeCloseTo(PRE_ADVANCE_ROWS - 10, 9);
     // The body extends behind the front edge, above the window.
-    expect(e5.y - e5.h / 2).toBeCloseTo(2 - 20, 9);
+    expect(e5.y - e5.h / 2).toBeCloseTo(PRE_ADVANCE_ROWS - 10 - 20, 9);
   });
 
   it('shifts a footprint that would leave the lane inward (D11)', () => {
@@ -270,69 +274,117 @@ describe('march (A28: pursuit is switched off)', () => {
   });
 });
 
-describe('side gates (A27)', () => {
-  it('a gate token in any edge column becomes one gate filling that strip', () => {
+describe('rail gates (A27, A29)', () => {
+  const FAR_RAT = [...Array.from({ length: 120 }, emptyRow), rowWith({ 22: 'E1' })];
+
+  it('a gate token in an edge column puts a gate on that side rail, outside the lane', () => {
     const map = mapFromRows([rowWith({ 2: 'G25-P3', 3: 'E1', 5: 'E1', 41: 'G7' })]);
     const layout = getLayout(map, 1);
-    expect(layout.type[0]).toBe(GATE_TYPE);
-    expect(layout.type[COLS - GATE_WIDTH]).toBe(GATE_TYPE);
-    // The rat inside the strip is left out; the one beside it stays.
-    expect(layout.type[3]).toBe(0);
+    // The value is the token's column plus one.
+    expect(layout.gateLeft[0]).toBe(3);
+    expect(layout.gateRight[0]).toBe(42);
+    // Rats keep every lane cell that is not the token itself.
+    expect(layout.type[2]).toBe(0);
+    expect(layout.type[3]).toBe(1);
     expect(layout.type[5]).toBe(1);
 
     const sim = createSim(map, 1);
     const gates = activeEnemies(sim).filter((e) => e.type === GATE_TYPE).sort((a, b) => a.x - b.x);
     expect(gates).toHaveLength(2);
-    expect(gates[0]).toMatchObject({ x: 2, w: GATE_WIDTH, h: 1, hp: 25, drop: DROP_CLONE_10 });
-    expect(gates[1]).toMatchObject({ x: COLS - 2, w: GATE_WIDTH, h: 1, hp: 7, drop: 0 });
-    expect(sim.enemies.live).toBe(3);
+    expect(gates[0]).toMatchObject({ x: RAIL_LEFT_X, w: GATE_WIDTH, hp: 25, drop: DROP_CLONE_10 });
+    expect(gates[1]).toMatchObject({ x: RAIL_RIGHT_X, w: GATE_WIDTH, hp: 7, drop: 0 });
+    expect(gates[0].x + gates[0].w / 2).toBeLessThanOrEqual(0);
+    expect(gates[1].x - gates[1].w / 2).toBeGreaterThanOrEqual(COLS);
+    expect(sim.enemies.live).toBe(4);
   });
 
-  it('breaks after taking its resistance in hits and drops its box', () => {
-    const map = mapFromRows([rowWith({ 0: 'G3-P3' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
+  it('rats fill the lane from wall to wall and never stand on a rail', () => {
+    const map = mapFromRows([fullRow('E1'), rowWith({ 0: 'G5' }), fullRow('E2')]);
+    const sim = createSim(map, 1);
+    const rats = activeEnemies(sim).filter((e) => e.type !== GATE_TYPE);
+    expect(rats).toHaveLength(2 * COLS);
+    expect(Math.min(...rats.map((e) => e.x))).toBe(0.5);
+    expect(Math.max(...rats.map((e) => e.x))).toBe(COLS - 0.5);
+  });
+
+  it('breaks after taking its resistance in hits and rewards the swarm on the spot', () => {
+    const map = mapFromRows([rowWith({ 0: 'G3-P3' }), ...FAR_RAT]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
-    run(sim, map, scratch, 1, { targetDelta: -20, keyDir: 0 });
-    while (sim.powerups.live === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
-    const box = sim.powerups.items.find((p) => p.active)!;
-    expect(box.kind).toBe(DROP_CLONE_10);
-    expect(box.x).toBe(2);
-    expect(sim.shots).toBeGreaterThanOrEqual(3);
-    // The swarm is under it, so the box is caught.
-    while (sim.clones === 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
+    // Step onto the left rail.
+    run(sim, map, scratch, 1, { targetDelta: RAIL_LEFT_X - sim.shooter.x, keyDir: 0 });
+    while (sim.clones === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
     expect(sim.clones).toBe(10);
+    expect(sim.shots).toBeGreaterThanOrEqual(3);
+    // No box to catch: the reward is immediate.
+    expect(sim.powerups.live).toBe(0);
+    expect(activeEnemies(sim).some((e) => e.type === GATE_TYPE)).toBe(false);
   });
 
-  it('shields what is behind it from bullets', () => {
-    const map = mapFromRows([rowWith({ 0: 'G999' }), emptyRow(), rowWith({ 2: 'E1' })]);
+  it('with no drop code it still gives a reward', () => {
+    const map = mapFromRows([rowWith({ 43: 'G2' }), ...FAR_RAT]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
-    run(sim, map, scratch, 1, { targetDelta: -19.6, keyDir: 0 });
-    run(sim, map, scratch, 4 * SIM_HZ);
-    expect(sim.kills).toBe(0);
-    const gate = activeEnemies(sim).find((e) => e.type === GATE_TYPE)!;
-    expect(gate.hp).toBeLessThan(999);
+    run(sim, map, scratch, 1, { targetDelta: RAIL_RIGHT_X - sim.shooter.x, keyDir: 0 });
+    while (sim.clones === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+    expect([1, 3, 10, 50]).toContain(sim.clones);
   });
 
-  it('is harmless: it does not hurt cats and does not lose the level at the goal line', () => {
-    const map = mapFromRows([rowWith({ 0: 'G999' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
+  it('shields the gate behind it from bullets', () => {
+    const map = mapFromRows([rowWith({ 0: 'G999' }), emptyRow(), emptyRow(), rowWith({ 0: 'G5-P3' }), ...FAR_RAT]);
+    const sim = createSim(map, 1, LONE);
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: RAIL_LEFT_X - sim.shooter.x, keyDir: 0 });
+    run(sim, map, scratch, 4 * SIM_HZ);
+    const gates = activeEnemies(sim).filter((e) => e.type === GATE_TYPE).sort((a, b) => b.y - a.y);
+    expect(gates).toHaveLength(2);
+    expect(gates[0].hp).toBeLessThan(999);
+    expect(gates[1].hp).toBe(5);
+    expect(sim.clones).toBe(0);
+  });
+
+  it('an unbroken gate kills every cat in its way and carries on', () => {
+    const map = mapFromRows([rowWith({ 0: 'G9999' }), ...FAR_RAT]);
+    // Two rings of clones standing in the middle of the rail: all of them are in its way.
+    const sim = createSim(map, 1, { startClones: 18 });
+    const scratch = createScratch();
+    run(sim, map, scratch, 1, { targetDelta: RAIL_LEFT_X - sim.shooter.x, keyDir: 0 });
+    while (sim.phase === 'playing' && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
+    expect(sim.phase).toBe('lost');
+    expect(sim.lossReason).toBe('swarm');
+    const gate = activeEnemies(sim).find((e) => e.type === GATE_TYPE)!;
+    expect(gate.hp).toBeGreaterThan(9000);
+  });
+
+  it('only kills the cats that stand in its way', () => {
+    const map = mapFromRows([rowWith({ 0: 'G9999' }), ...FAR_RAT]);
+    const sim = createSim(map, 1, { startClones: 36 });
+    const scratch = createScratch();
+    // The swarm straddles the kerb: its left edge is on the rail, the rest on the lane.
+    run(sim, map, scratch, 1, { targetDelta: 2 - sim.shooter.x, keyDir: 0 });
+    let afterPass = -1;
+    while (sim.phase === 'playing' && sim.tick < 40 * SIM_HZ) {
+      run(sim, map, scratch, 1);
+      const gate = activeEnemies(sim).find((e) => e.type === GATE_TYPE);
+      if (gate && afterPass < 0 && gate.y - gate.h / 2 > SHOOTER_Y + 5) afterPass = sim.clones;
+      if (!gate) break;
+    }
+    expect(sim.phase).toBe('playing');
+    expect(afterPass).toBeGreaterThan(0);
+    expect(afterPass).toBeLessThan(36);
+    // Once it has gone by, nobody else dies.
+    expect(sim.clones).toBe(afterPass);
+  });
+
+  it('is only a missed reward when it reaches the goal line', () => {
+    const map = mapFromRows([rowWith({ 0: 'G9999' }), ...FAR_RAT]);
     const sim = createSim(map, 1, { startClones: 6 });
     const scratch = createScratch();
-    run(sim, map, scratch, 1, { targetDelta: -20, keyDir: 0 });
-    run(sim, map, scratch, 18 * SIM_HZ);
+    while (activeEnemies(sim).some((e) => e.type === GATE_TYPE) && sim.tick < 40 * SIM_HZ) run(sim, map, scratch, 1);
+    expect(activeEnemies(sim).some((e) => e.type === GATE_TYPE)).toBe(false);
     expect(sim.phase).toBe('playing');
     expect(sim.clones).toBe(6);
-    expect(activeEnemies(sim).some((e) => e.type === GATE_TYPE)).toBe(false);
-    expect(sim.powerups.live).toBe(0);
-  });
-
-  it('with no drop code it still drops a box', () => {
-    const map = mapFromRows([rowWith({ 43: 'G2' }), ...Array.from({ length: 60 }, emptyRow), rowWith({ 22: 'E1' })]);
-    const sim = createSim(map, 1, LONE);
-    const scratch = createScratch();
-    run(sim, map, scratch, 1, { targetDelta: 20, keyDir: 0 });
-    while (sim.clones === 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
-    expect([1, 3, 10, 50]).toContain(sim.clones);
+    expect(sim.tick / SIM_HZ).toBeLessThan(WINDOW_ROWS / 2);
   });
 });
 

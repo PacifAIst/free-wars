@@ -25,6 +25,8 @@ const LOSS_TEXT: Record<string, string> = {
 
 /** How long the level name stays on screen at the start of a level. */
 const LEVEL_NAME_SECONDS = 3;
+/** Floating numbers that can be on screen at once. */
+const POPUPS = 10;
 
 function element(className: string, parent: HTMLElement): HTMLDivElement {
   const el = document.createElement('div');
@@ -54,6 +56,8 @@ export class HUD {
   private readonly title: HTMLDivElement;
   private readonly subtitle: HTMLDivElement;
   private readonly shown = new Map<HTMLElement, string>();
+  private readonly popups: HTMLDivElement[] = [];
+  private nextPopup = 0;
 
   constructor(host: HTMLElement) {
     this.root = element('hud', host);
@@ -68,6 +72,7 @@ export class HUD {
     this.waveLabel = element('hud-bar-label', wave);
 
     this.levelName = element('hud-level', this.root);
+    for (let i = 0; i < POPUPS; i++) this.popups.push(element('hud-pop', this.root));
 
     this.banner = element('hud-banner', this.root);
     this.title = element('hud-title', this.banner);
@@ -81,6 +86,20 @@ export class HUD {
     // Shrink the banner type on small screens.
     const scale = Math.min(1, width / 520, height / 520);
     this.root.style.setProperty('--hud-scale', scale.toFixed(3));
+  }
+
+  /** Shows a number that floats up from (x, y), in screen pixels, and fades: "+10" when the swarm grows. */
+  popup(text: string, x: number, y: number, color: string): void {
+    const el = this.popups[this.nextPopup];
+    this.nextPopup = (this.nextPopup + 1) % POPUPS;
+    el.textContent = text;
+    el.style.left = `${Math.round(x)}px`;
+    el.style.top = `${Math.round(y)}px`;
+    el.style.color = color;
+    // Restart the animation even if this element is still mid-flight.
+    el.classList.remove('hud-pop-run');
+    void el.offsetWidth;
+    el.classList.add('hud-pop-run');
   }
 
   private text(el: HTMLElement, value: string): void {

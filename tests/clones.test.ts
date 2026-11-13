@@ -241,8 +241,8 @@ describe('clone boxes (B4, B8, B9)', () => {
   it('is lost if it reaches the goal line away from the swarm', () => {
     const sim = createSim(FAR, 1, LONE);
     const scratch = createScratch();
-    spawnDrop(sim, DROP_CLONE_10, 5, 20);
-    run(sim, FAR, scratch, 5 * SIM_HZ);
+    spawnDrop(sim, DROP_CLONE_10, 5, WINDOW_ROWS - 12);
+    run(sim, FAR, scratch, 3 * SIM_HZ);
     expect(sim.powerups.live).toBe(0);
     expect(sim.clones).toBe(0);
   });
@@ -250,13 +250,13 @@ describe('clone boxes (B4, B8, B9)', () => {
   it('reaches further as the swarm grows (B9)', () => {
     const sim = createSim(FAR, 1, { startClones: 40 });
     const scratch = createScratch();
-    // Four cells to the side: outside a lone shooter, inside a four-ring swarm.
-    spawnDrop(sim, DROP_CLONE_1, sim.shooter.x + 4, SHOOTER_Y - 0.5);
+    // Seven cells to the side: out of a lone shooter's reach, within a four-ring swarm's.
+    spawnDrop(sim, DROP_CLONE_1, sim.shooter.x + 7, SHOOTER_Y - 0.5);
     run(sim, FAR, scratch, 2);
     expect(sim.clones).toBe(41);
 
     const lone = createSim(FAR, 1, LONE);
-    spawnDrop(lone, DROP_CLONE_1, lone.shooter.x + 4, SHOOTER_Y - 0.5);
+    spawnDrop(lone, DROP_CLONE_1, lone.shooter.x + 7, SHOOTER_Y - 0.5);
     run(lone, FAR, scratch, 2);
     expect(lone.clones).toBe(0);
   });

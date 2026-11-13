@@ -14,7 +14,7 @@ import {
   SIM_DT,
   START_CLONES,
 } from './constants';
-import { makeEnemy, spawnEnemy } from './Enemy';
+import { makeEnemy, spawnEnemy, spawnGate } from './Enemy';
 import { makeFx } from './Fx';
 import { getLayout } from './layout';
 import { createShooter } from './Player';
@@ -60,7 +60,7 @@ export const EMPTY_MAP: MapData = {
 function spawnRow(sim: SimState, map: MapData, row: number): boolean {
   const layout = getLayout(map, sim.seed);
   const base = row * COLS;
-  let needed = 0;
+  let needed = (layout.gateLeft[row] > 0 ? 1 : 0) + (layout.gateRight[row] > 0 ? 1 : 0);
   for (let c = 0; c < COLS; c++) if (layout.type[base + c] !== 0) needed++;
   if (needed > sim.enemies.freeCount) {
     if (!sim.poolFullLogged) {
@@ -78,6 +78,15 @@ function spawnRow(sim: SimState, map: MapData, row: number): boolean {
     // HP override and drop come from the token, which may sit in another column (A21).
     const spec = cellSpec(map, map.cells[base + layout.source[base + c]]);
     spawnEnemy(sim, type, c, row, frontY, spec.hp, spec.drop);
+  }
+  // Gates travel on the rails beside the lane (A29). The value is the token's column plus one.
+  if (layout.gateLeft[row] > 0) {
+    const spec = cellSpec(map, map.cells[base + layout.gateLeft[row] - 1]);
+    spawnGate(sim, -1, row, frontY, spec.hp, spec.drop);
+  }
+  if (layout.gateRight[row] > 0) {
+    const spec = cellSpec(map, map.cells[base + layout.gateRight[row] - 1]);
+    spawnGate(sim, 1, row, frontY, spec.hp, spec.drop);
   }
   return true;
 }
@@ -118,6 +127,7 @@ export function createWorld(map: MapData, seed: number, options: Partial<SimOpti
     totalRows: map.rows,
     baseHp: BASE_HP,
     kills: 0,
+    fxCount: 0,
     shots: 0,
     poolFullLogged: false,
     shooter: createShooter(),
