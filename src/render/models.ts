@@ -492,6 +492,7 @@ export function walking<T extends Material>(material: T, pace: number, stride: n
         '#include <common>',
         `#include <common>
 attribute float limb;
+attribute vec2 punch;
 uniform float uWalkTime;
 uniform float uWalkPace;
 uniform float uWalkStride;
@@ -528,6 +529,16 @@ uniform float uHull;`,
     // The head bobs a beat behind the body.
     transformed.y += sin(w * 2.0 - 0.9) * 0.022 * uWalkStride;
   }
+  // A punch (big rats only; the punch attribute is zero for everyone else): the arm stretches
+  // out hand first, x for the left arm and y for the right, and the body leans into it.
+  if (limb > 3.5 && limb < 5.5) {
+    float p = limb < 4.5 ? punch.x : punch.y;
+    float hand = clamp((0.8 - transformed.y) / 0.4, 0.0, 1.0);
+    transformed.z += p * 0.8 * hand;
+    transformed.y += max(p, 0.0) * 0.34 * hand;
+    transformed.x *= 1.0 - 0.5 * max(p, 0.0) * hand;
+  }
+  transformed.z += max(0.0, max(punch.x, punch.y)) * 0.12 * transformed.y;
   // The whole body bobs twice a cycle and waddles from foot to foot.
   float roll = swing * 0.1 * uWalkStride;
   float cr = cos(roll);
@@ -557,6 +568,55 @@ export function outlineMaterial(pace: number, stride: number, width: number): Me
 /** Soft contact shadow under a unit: a flat disc on the lane. */
 export function blobGeometry(): BufferGeometry {
   return new CircleGeometry(0.46, 12).rotateX(-Math.PI / 2);
+}
+
+/**
+ * The tank the swarm rides in (SPEC 8.1): one unit wide, nose towards -z. It
+ * wears the black cat's ears and red scarf so it reads as the player's.
+ */
+export function tankGeometry(): BufferGeometry {
+  const hull = 0x4c9c62;
+  const hullDark = 0x2f6b42;
+  const track = 0x262a40;
+  const steel = 0x8f9ab8;
+  const parts = [
+    // Tracks and their wheels.
+    part(box(0.22, 0.24, 1.12), track, { p: [-0.39, 0.12, 0] }),
+    part(box(0.22, 0.24, 1.12), track, { p: [0.39, 0.12, 0] }),
+    ...[-0.4, -0.13, 0.13, 0.4].flatMap((z) => [
+      part(rod(0.1, 0.1, 0.24, 12), steel, { p: [-0.39, 0.12, z], r: [0, 0, Math.PI / 2] }),
+      part(rod(0.1, 0.1, 0.24, 12), steel, { p: [0.39, 0.12, z], r: [0, 0, Math.PI / 2] }),
+    ]),
+    // Hull, with a sloped nose.
+    part(box(0.62, 0.22, 1.0), hull, { p: [0, 0.3, 0.02] }),
+    part(box(0.6, 0.16, 0.34), hullDark, { p: [0, 0.27, -0.5], r: [0.5, 0, 0] }),
+    part(box(0.5, 0.05, 0.3), hullDark, { p: [0, 0.42, 0.34] }),
+    // Turret, barrel and muzzle.
+    part(rod(0.27, 0.31, 0.2, 18), hull, { p: [0, 0.5, 0.06] }),
+    part(rod(0.33, 0.33, 0.06, 18), 0xff3d4f, { p: [0, 0.42, 0.06] }),
+    part(rod(0.06, 0.06, 0.62, 12), steel, { p: [0, 0.52, -0.48], r: [Math.PI / 2, 0, 0] }),
+    part(rod(0.09, 0.09, 0.14, 12), track, { p: [0, 0.52, -0.82], r: [Math.PI / 2, 0, 0] }),
+    // Cat ears and a hatch on the turret.
+    part(spike(0.09, 0.2, 10), 0x22243f, { p: [-0.15, 0.68, 0.1], r: [0, 0, 0.25] }),
+    part(spike(0.09, 0.2, 10), 0x22243f, { p: [0.15, 0.68, 0.1], r: [0, 0, -0.25] }),
+    part(rod(0.11, 0.11, 0.04, 12), hullDark, { p: [0, 0.61, 0.08] }),
+    // Headlamps.
+    part(ball(0.05, 10), 0xfff1a8, { p: [-0.22, 0.34, -0.56] }),
+    part(ball(0.05, 10), 0xfff1a8, { p: [0.22, 0.34, -0.56] }),
+  ];
+  return shade(merge(parts), 0.7);
+}
+
+/** A rocket, one unit long, nose towards -z: white body, red nose, blue fins. */
+export function rocketGeometry(): BufferGeometry {
+  const parts = [
+    part(rod(0.11, 0.11, 0.62, 12), 0xf2f2f7, { p: [0, 0, 0.06], r: [Math.PI / 2, 0, 0] }),
+    part(spike(0.11, 0.3, 12), 0xe5383b, { p: [0, 0, -0.4], r: [-Math.PI / 2, 0, 0] }),
+    part(rod(0.08, 0.11, 0.08, 12), 0x55617d, { p: [0, 0, 0.41], r: [Math.PI / 2, 0, 0] }),
+    part(box(0.42, 0.03, 0.22), 0x3b6cf0, { p: [0, 0, 0.3] }),
+    part(box(0.03, 0.42, 0.22), 0x3b6cf0, { p: [0, 0, 0.3] }),
+  ];
+  return merge(parts);
 }
 
 /** Bullet: a capsule lying along the lane. */

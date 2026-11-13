@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addClones, cloneX, cloneY, formationRadius, ringsFor, SLOT_X, SLOT_Y, stepContact } from '../src/game/Clone';
 import {
-  BIG_CONTACT_RATE,
   CLONE_BOX_AMOUNTS,
   CLONE_CAP,
   CLONE_FIRE_RATE_FACTOR,
@@ -239,16 +238,12 @@ describe('contact trades (D12 as changed by A18 and A28)', () => {
     expect(sim.kills).toBe(0);
   });
 
-  it('a big enemy kills at most BIG_CONTACT_RATE cats per second (B7)', () => {
-    const map = mapFromRows([rowWith({ 14: 'E4-100000' }), ...gap(400), rowWith({ 0: 'E1' })]);
-    const sim = createSim(map, 1, { startClones: 60 });
-    const scratch = createScratch();
-    while (sim.clones === 60 && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
-    expect(sim.clones).toBe(59);
-    run(sim, map, scratch, 2 * SIM_HZ);
-    const lost = 59 - sim.clones;
-    expect(lost).toBeGreaterThanOrEqual(2 * BIG_CONTACT_RATE - 1);
-    expect(lost).toBeLessThanOrEqual(2 * BIG_CONTACT_RATE + 1);
+  it('a big rat does not trade one for one: it punches (see weapons.test.ts)', () => {
+    const sim = createSim(FAR, 1, { startClones: 6 });
+    // A fat rat far enough up the lane to touch only the front clone.
+    touch(sim, 4, sim.shooter.x, cloneY(0) - ENEMY_STATS[4].h / 2 + 0.5);
+    expect(sim.clones).toBe(6);
+    expect(sim.kills).toBe(0);
   });
 });
 
@@ -329,7 +324,7 @@ describe('boxes dropped by fat rats (B4, B8, B9)', () => {
     expect(total).toBe(rolls);
   });
 
-  it('until the weapons milestone a weapon code falls as a clone box', () => {
+  it('a weapon code falls as its own box', () => {
     const sim = createSim(FAR, 1, LONE);
     expect(isCloneBox(DROP_CLONE_1)).toBe(true);
     expect(isCloneBox(DROP_CLONE_50)).toBe(true);
@@ -338,7 +333,6 @@ describe('boxes dropped by fat rats (B4, B8, B9)', () => {
     spawnDrop(sim, DROP_CLONE_10, 4, 10);
     expect(sim.powerups.live).toBe(2);
     const kinds = sim.powerups.items.filter((p) => p.active).map((p) => p.kind);
-    expect(isCloneBox(kinds[0])).toBe(true);
-    expect(kinds[1]).toBe(DROP_CLONE_10);
+    expect(kinds).toEqual([DROP_MINIGUN, DROP_CLONE_10]);
   });
 });

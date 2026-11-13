@@ -5,16 +5,24 @@ import { poolAlloc, poolFree } from './Pool';
 // Effect kinds. Effects are cosmetic: nothing in the simulation reads them back.
 /** A bullet hit that did not kill. */
 export const FX_HIT = 0;
-/** An enemy died. */
+/** An enemy died. `tag` is its type. */
 export const FX_KILL = 1;
 /** An enemy reached the goal line. */
 export const FX_BASE = 2;
-/** A cat was killed by contact. */
+/** A cat was killed. */
 export const FX_CAT = 3;
-/** A clone box was picked up. `size` is the number of clones it gave. */
+/** A falling box was caught, or a tank bubble popped. `size` is the clones gained, `tag` the drop code. */
 export const FX_PICKUP = 4;
-/** A gate was broken. `size` is the number of clones it gave. */
+/** A panel on a rail was collected. `size` is the clones gained, `tag` the drop code. */
 export const FX_GATE = 5;
+/** A big rat's punch landed. `size` is the number of cats it killed, `tag` the rat's type. */
+export const FX_PUNCH = 6;
+/** A rocket exploded. `size` is the side of the square it covers, `tag` 1 for a tank rocket. */
+export const FX_BLAST = 7;
+/** The laser fires. */
+export const FX_LASER = 8;
+/** The tank rolls out (`tag` 1) or is used up (`tag` 0). */
+export const FX_TANK = 9;
 
 const LIFE: readonly number[] = [
   HIT_FLASH_SECONDS * 2,
@@ -23,6 +31,10 @@ const LIFE: readonly number[] = [
   FX_PUFF_SECONDS,
   FX_PICKUP_SECONDS,
   FX_PICKUP_SECONDS,
+  FX_PUFF_SECONDS,
+  FX_PUFF_SECONDS,
+  FX_PUFF_SECONDS,
+  FX_PUFF_SECONDS,
 ];
 
 export function makeFx(): Fx {

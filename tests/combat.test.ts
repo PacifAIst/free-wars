@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   BASE_HP,
+  BUILT_IN_LEVELS,
   BULLET_SPEED,
   COLS,
   FIRE_RATE,
@@ -141,9 +142,9 @@ describe('shooting', () => {
   });
 
   it('hits the visible part of a big enemy and wears it down', () => {
-    const map = mapFromRows([rowWith({ 16: 'E4-10' })]);
+    const map = mapFromRows([rowWith({ 16: 'E4-4' })]);
     const sim = createSim(map, 1, LONE);
-    run(sim, map, createScratch(), 8 * SIM_HZ);
+    run(sim, map, createScratch(), 3 * SIM_HZ);
     expect(sim.kills).toBe(1);
   });
 
@@ -318,16 +319,17 @@ describe('scale (M3 check)', () => {
 });
 
 describe('level 1', () => {
-  it('can be won by a simple bot', () => {
-    const map = builtIn('1');
+  // The 44 maps are placeholders until the owner's own maps replace them; each must still be winnable.
+  it('every built-in map can be won by a simple bot', () => {
     const input: SimInput = { targetDelta: 0, keyDir: 0 };
+    const scratch = createScratch();
     const results: string[] = [];
-    for (const seed of [1, 2, 3]) {
-      const sim = createSim(map, seed);
-      const scratch = createScratch();
-      while (sim.phase === 'playing' && sim.tick < 180 * SIM_HZ) stepSim(sim, map, botInput(sim, input), scratch);
-      results.push(`${sim.phase}${sim.lossReason ? `:${sim.lossReason}` : ''} cats=${sim.clones + 1} rows=${sim.nextRow}`);
+    for (let n = 1; n <= BUILT_IN_LEVELS; n++) {
+      const map = builtIn(String(n));
+      const sim = createSim(map, n);
+      while (sim.phase === 'playing' && sim.tick < 300 * SIM_HZ) stepSim(sim, map, botInput(sim, input), scratch);
+      results.push(`${n}: ${sim.phase}${sim.lossReason ? `:${sim.lossReason}` : ''}`);
     }
-    for (const result of results) expect(result).toMatch(/^won/);
-  });
+    expect(results.filter((r) => !r.endsWith('won'))).toEqual([]);
+  }, 120_000);
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { COLS, SIM_HZ } from '../src/game/constants';
-import { Game, type GameView, type RenderFrame, TRANSITIONS } from '../src/game/Game';
+import { Game, type GameView, memoryProgress, type RenderFrame, TRANSITIONS } from '../src/game/Game';
 import type { InputSource } from '../src/game/Input';
 import type { MapSource } from '../src/game/maps';
 import type { GameState, MapData } from '../src/types';
@@ -75,7 +75,7 @@ interface Session {
   t: number;
 }
 
-/** Boots a game and taps through the menu so it is PLAYING at time `t`. */
+/** Boots a game and goes through the menu and the map grid, so it is PLAYING at time `t`. */
 async function startPlaying(maps: Record<string, MapData> = { '1': QUIET_MAP }): Promise<Session> {
   const input = new FakeInput();
   const view = new FakeView();
@@ -84,7 +84,8 @@ async function startPlaying(maps: Record<string, MapData> = { '1': QUIET_MAP }):
   game.ready();
   let t = 0;
   game.frame(t);
-  input.tap = true;
+  game.play();
+  game.chooseLevel('1');
   for (let i = 0; i < 6 && game.state !== 'PLAYING'; i++) {
     game.frame((t += FRAME_MS));
     await settle();
@@ -102,24 +103,84 @@ describe('state machine (SPEC section 4)', () => {
     }
   });
 
-  it('walks BOOT -> MENU -> LEVEL_SELECT -> LOADING -> PLAYING on a tap', async () => {
-    const input = new FakeInput();
-    const game = new Game(new FakeView(), input, source({ '1': QUIET_MAP }));
+  it('walks BOOT -> MENU -> LEVEL_SELECT -> LOADING -> PLAYING', async () => {
+    const game = new Game(new FakeView(), new FakeInput(), source({ '1': QUIET_MAP }));
     expect(game.state).toBe('BOOT');
     game.ready();
     expect(game.state).toBe('MENU');
     game.frame(0);
     expect(game.state).toBe('MENU');
-    input.tap = true;
-    const seen: GameState[] = [];
-    for (let i = 1; i <= 5; i++) {
+    // The PLAY button opens the map grid, which waits for a map to be picked.
+    game.play();
+    expect(game.state).toBe('LEVEL_SELECT');
+    game.frame(FRAME_MS);
+    expect(game.state).toBe('LEVEL_SELECT');
+    game.chooseLevel('1');
+    expect(game.state).toBe('LOADING');
+    for (let i = 2; i <= 6 && game.state !== 'PLAYING'; i++) {
       game.frame(i * FRAME_MS);
-      seen.push(game.state);
       await settle();
     }
-    expect(seen).toEqual(['LEVEL_SELECT', 'LOADING', 'LOADING', 'PLAYING', 'PLAYING']);
+    expect(game.state).toBe('PLAYING');
     expect(game.map).toBe(QUIET_MAP);
     expect(game.sim.totalRows).toBe(400);
+  });
+
+  it('Enter or Space on the menu stands for the PLAY button', () => {
+    const input = new FakeInput();
+    const game = new Game(new FakeView(), input, source({ '1': QUIET_MAP }));
+    game.ready();
+    input.tap = true;
+    game.frame(0);
+    expect(game.state).toBe('LEVEL_SELECT');
+  });
+
+  it('refuses a locked map, and opens the next map after a win', async () => {
+    const progress = memoryProgress();
+    const game = new Game(new FakeView(), new FakeInput(), source({ '1': QUICK_WIN, '2': QUIET_MAP }), {
+      nextSeed: () => 7,
+      progress,
+    });
+    game.ready();
+    game.play();
+    expect(game.isUnlocked('2')).toBe(false);
+    game.chooseLevel('2');
+    expect(game.state).toBe('LEVEL_SELECT');
+    game.chooseLevel('1');
+    let now = 0;
+    for (let i = 0; i < 8 * SIM_HZ && game.state !== 'WIN'; i++) {
+      game.frame((now += FRAME_MS));
+      if (game.state === 'LOADING') await settle();
+    }
+    expect(game.state).toBe('WIN');
+    expect(progress.unlocked()).toBe(2);
+    expect(game.isUnlocked('2')).toBe(true);
+    // Maps outside the 44, such as the dev map, are never locked.
+    expect(game.isUnlocked('0')).toBe(true);
+  });
+
+  it('goes back to the menu from the map grid, a pause, a defeat and a victory', async () => {
+    const grid = new Game(new FakeView(), new FakeInput(), source({ '1': QUIET_MAP }));
+    grid.ready();
+    grid.play();
+    grid.toMenu();
+    expect(grid.state).toBe('MENU');
+
+    const paused = await startPlaying();
+    paused.game.toMenu();
+    expect(paused.game.state).toBe('PLAYING');
+    paused.game.pause();
+    paused.game.toMenu();
+    expect(paused.game.state).toBe('MENU');
+
+    for (const map of [SURE_LOSS, QUICK_WIN]) {
+      const { game, t } = await startPlaying({ '1': map });
+      let now = t;
+      for (let i = 0; i < 60 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
+      expect(['WIN', 'LOSE']).toContain(game.state);
+      game.toMenu();
+      expect(game.state).toBe('MENU');
+    }
   });
 
   it('rejects illegal transitions', () => {
@@ -158,14 +219,16 @@ describe('state machine (SPEC section 4)', () => {
     error.mockRestore();
   });
 
-  it('goes to WIN when the level is won, then on to the next level', async () => {
-    const { game, input, maps, t } = await startPlaying({ '1': QUICK_WIN, '2': QUIET_MAP });
+  it('goes to WIN when the level is won, then back to the map grid with the next map open', async () => {
+    const { game, maps, t } = await startPlaying({ '1': QUICK_WIN, '2': QUIET_MAP });
     let now = t;
     for (let i = 0; i < 5 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
     expect(game.state).toBe('WIN');
     game.frame((now += FRAME_MS));
     expect(game.state).toBe('WIN');
-    input.tap = true;
+    game.continueAfterWin();
+    expect(game.state).toBe('LEVEL_SELECT');
+    game.chooseLevel('2');
     for (let i = 0; i < 5; i++) {
       game.frame((now += FRAME_MS));
       await settle();
@@ -175,23 +238,14 @@ describe('state machine (SPEC section 4)', () => {
     expect(maps.loads).toEqual(['1', '2']);
   });
 
-  it('stays on the last level after winning it', async () => {
-    const { game, input, t } = await startPlaying({ '1': QUICK_WIN });
-    let now = t;
-    for (let i = 0; i < 5 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
-    input.tap = true;
-    game.frame(now + FRAME_MS);
-    expect(game.state).toBe('LEVEL_SELECT');
-    expect(game.levelId).toBe('1');
-  });
-
   it('goes to LOSE when the level is lost, and retries the same level', async () => {
     const { game, input, maps, t } = await startPlaying({ '1': SURE_LOSS, '2': QUIET_MAP });
     let now = t;
     for (let i = 0; i < 60 * SIM_HZ && game.state === 'PLAYING'; i++) game.frame((now += FRAME_MS));
     expect(game.state).toBe('LOSE');
     expect(game.sim.lossReason).toBe('base');
-    input.tap = true;
+    void input;
+    game.retry();
     for (let i = 0; i < 5; i++) {
       game.frame((now += FRAME_MS));
       await settle();
@@ -267,7 +321,8 @@ describe('fixed-step loop', () => {
     const game = new Game(new FakeView(), input, source({ '1': QUIET_MAP }));
     game.ready();
     input.dragGu = 12;
-    input.tap = true;
+    game.play();
+    game.chooseLevel('1');
     for (let i = 0; i < 6; i++) {
       game.frame(i * FRAME_MS);
       await settle();

@@ -10,6 +10,7 @@ import {
   POOL_ENEMIES,
   POOL_PARTICLES,
   POOL_POWERUPS,
+  POOL_ROCKETS,
   PRE_ADVANCE_ROWS,
   SIM_DT,
   START_CLONES,
@@ -20,11 +21,12 @@ import { getLayout } from './layout';
 import { createShooter } from './Player';
 import { createPool } from './Pool';
 import { makePowerup } from './Powerup';
-import { makeBullet } from './Projectile';
+import { makeBullet, makeRocket } from './Projectile';
 
 export interface PoolCapacities {
   enemies: number;
   bullets: number;
+  rockets: number;
   fx: number;
   powerups: number;
 }
@@ -38,6 +40,7 @@ export interface SimOptions {
 export const DEFAULT_CAPACITIES: Readonly<PoolCapacities> = {
   enemies: POOL_ENEMIES,
   bullets: POOL_BULLETS,
+  rockets: POOL_ROCKETS,
   fx: POOL_PARTICLES,
   powerups: POOL_POWERUPS,
 };
@@ -129,6 +132,14 @@ export function createWorld(map: MapData, seed: number, options: Partial<SimOpti
     kills: 0,
     fxCount: 0,
     shots: 0,
+    rocketsFired: 0,
+    minigun: 0,
+    rocketMode: 0,
+    laser: 0,
+    laserClock: 0,
+    laserCasts: 0,
+    tank: 0,
+    tankCooldown: 0,
     poolFullLogged: false,
     shooter: createShooter(),
     clones: 0,
@@ -136,6 +147,7 @@ export function createWorld(map: MapData, seed: number, options: Partial<SimOpti
     enemies: createPool(capacities.enemies, makeEnemy),
     powerups: createPool(capacities.powerups, makePowerup),
     bullets: createPool(capacities.bullets, makeBullet),
+    rockets: createPool(capacities.rockets, makeRocket),
     fx: createPool(capacities.fx, makeFx),
   };
   addClones(sim, options.startClones ?? START_CLONES);

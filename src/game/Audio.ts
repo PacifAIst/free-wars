@@ -5,6 +5,8 @@
 // opens from file://. Browsers only allow sound after a touch or key press:
 // call unlock() from the first one.
 
+import { SFX_VOLUME } from './constants';
+
 type Wave = OscillatorType;
 
 interface Tone {
@@ -39,6 +41,9 @@ const MIN_GAP: Record<string, number> = {
   kill: 0.03,
   gateHit: 0.05,
   cat: 0.06,
+  rocket: 0.08,
+  blast: 0.06,
+  punch: 0.1,
 };
 
 const NOTE = (semitonesFromA4: number): number => 440 * 2 ** (semitonesFromA4 / 12);
@@ -49,7 +54,7 @@ export class Sfx {
   private noiseBuffer: AudioBuffer | null = null;
   private readonly lastPlayed = new Map<string, number>();
   private muted = false;
-  private volume = 0.7;
+  private volume = SFX_VOLUME;
 
   /** Starts the audio engine. Safe to call on every input event. */
   unlock(): void {
@@ -89,6 +94,14 @@ export class Sfx {
     this.muted = !this.muted;
     if (this.ctx && this.master) {
       this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Sets the level of the sound effects, 0 to 1. */
+  setVolume(volume: number): void {
+    this.volume = Math.min(1, Math.max(0, volume));
+    if (this.ctx && this.master && !this.muted) {
+      this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.02);
     }
   }
 
@@ -237,6 +250,74 @@ export class Sfx {
       const f = NOTE(semitone - 9);
       this.tone({ wave: 'sawtooth', from: f, to: f * 0.97, length: 0.34, gain: 0.13, delay: 0.25 + i * 0.2, attack: 0.02 });
     });
+  }
+
+  /** A big rat's punch lands: a deep thud with a crack on top. Harder punches hit lower. */
+  punch(kills: number): void {
+    if (!this.ready('punch')) return;
+    const weight = kills >= 30 ? 0.75 : 1;
+    this.tone({ wave: 'sine', from: 170 * weight, to: 38, length: 0.34, gain: 0.5 });
+    this.tone({ wave: 'square', from: 90 * weight, to: 40, length: 0.16, gain: 0.12 });
+    this.noise({ length: 0.2, gain: 0.3, filter: 'lowpass', from: 2400, to: 160 });
+    this.noise({ length: 0.05, gain: 0.16, filter: 'highpass', from: 3000, to: 5000 });
+  }
+
+  /** A weapon is picked up: a quick rising arpeggio with a bright top. */
+  weapon(): void {
+    if (!this.ready('weapon')) return;
+    [0, 5, 7, 12, 17].forEach((semitone, i) => {
+      const f = NOTE(semitone);
+      this.tone({ wave: 'square', from: f, to: f, length: 0.12, gain: 0.07, delay: i * 0.045 });
+      this.tone({ wave: 'triangle', from: f * 2, to: f * 2, length: 0.16, gain: 0.1, delay: i * 0.045 });
+    });
+  }
+
+  /** A rocket leaves its tube. */
+  rocket(): void {
+    if (!this.ready('rocket')) return;
+    this.noise({ length: 0.26, gain: 0.14, filter: 'bandpass', from: 500, to: 2600, q: 0.9 });
+    this.tone({ wave: 'sawtooth', from: 160, to: 420, length: 0.2, gain: 0.05 }, this.vary(0.1));
+  }
+
+  /** A rocket explodes. The tank's rockets are bigger. */
+  explosion(big: boolean): void {
+    if (!this.ready('blast')) return;
+    const scale = big ? 1.5 : 1;
+    this.noise({ length: 0.32 * scale, gain: 0.3 * scale, filter: 'lowpass', from: 3400, to: 110 });
+    this.tone({ wave: 'sine', from: 130 / scale, to: 36, length: 0.3 * scale, gain: 0.36 }, this.vary(0.08));
+  }
+
+  /** The laser charges: a rising whine, as long as the charge itself. */
+  laserCharge(seconds: number): void {
+    if (!this.ready('laserCharge')) return;
+    this.tone({ wave: 'sawtooth', from: 110, to: 1500, length: seconds, gain: 0.06, attack: seconds * 0.6 });
+    this.tone({ wave: 'sine', from: 220, to: 3000, length: seconds, gain: 0.07, attack: seconds * 0.6 });
+  }
+
+  /** The laser fires. */
+  laserFire(seconds: number): void {
+    if (!this.ready('laserFire')) return;
+    this.tone({ wave: 'sawtooth', from: 1900, to: 240, length: seconds, gain: 0.2 });
+    this.tone({ wave: 'square', from: 950, to: 120, length: seconds, gain: 0.08 });
+    this.noise({ length: seconds, gain: 0.16, filter: 'bandpass', from: 5000, to: 1200, q: 0.7 });
+  }
+
+  /** The tank rolls out: an engine growl and a fanfare. */
+  tankStart(): void {
+    if (!this.ready('tank')) return;
+    this.tone({ wave: 'sawtooth', from: 55, to: 110, length: 0.7, gain: 0.2, attack: 0.05 });
+    this.noise({ length: 0.5, gain: 0.14, filter: 'lowpass', from: 300, to: 900 });
+    [0, 4, 7, 12].forEach((semitone, i) => {
+      const f = NOTE(semitone - 2);
+      this.tone({ wave: 'square', from: f, to: f, length: 0.16, gain: 0.08, delay: 0.1 + i * 0.07 });
+    });
+  }
+
+  /** The tank is used up. */
+  tankEnd(): void {
+    if (!this.ready('tank')) return;
+    this.tone({ wave: 'sawtooth', from: 120, to: 45, length: 0.4, gain: 0.16 });
+    this.noise({ length: 0.3, gain: 0.12, filter: 'lowpass', from: 1500, to: 200 });
   }
 
   /** Menu and banner taps. */

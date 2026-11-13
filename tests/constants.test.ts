@@ -18,10 +18,10 @@ describe('constants', () => {
     expect(ENEMY_STATS[7].speedSpec * SPEED_SCALE).toBeCloseTo(MARCH_SPEED * 0.5);
   });
 
-  it('A18: a minion crosses the window in 15 to 30 seconds', () => {
+  it('A33: a minion crosses the window in about 12 seconds', () => {
     const seconds = WINDOW_ROWS / MARCH_SPEED;
-    expect(seconds).toBeGreaterThan(15);
-    expect(seconds).toBeLessThan(30);
+    expect(seconds).toBeGreaterThan(8);
+    expect(seconds).toBeLessThan(20);
   });
 
   it('B8: boxes fall faster than the army marches', () => {

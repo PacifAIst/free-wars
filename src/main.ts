@@ -2,6 +2,9 @@ import { Sfx } from './game/Audio';
 import { Game } from './game/Game';
 import { Input } from './game/Input';
 import { builtInMaps } from './game/maps';
+import { Music } from './game/Music';
+import { Save } from './game/Save';
+import { Screens } from './game/Screens';
 import { Renderer3D } from './render/Renderer3D';
 
 function boot(): void {
@@ -9,25 +12,36 @@ function boot(): void {
   if (!host) throw new Error('Missing #game element');
 
   const sfx = new Sfx();
-  const renderer = new Renderer3D(host, sfx);
+  const music = new Music();
+  const renderer = new Renderer3D(host, sfx, music);
 
-  // Until the level select screen exists (M8), `?map=0` opens the dev map.
+  // `?map=0` skips the map grid and opens the dev map.
   const levelId = new URLSearchParams(window.location.search).get('map') ?? undefined;
 
   const input = new Input();
   input.attach(renderer.canvas);
-  const game = new Game(renderer, input, builtInMaps, { levelId });
+  const save = new Save();
+  const game = new Game(renderer, input, builtInMaps, { levelId, progress: save });
+  const screens = new Screens(host, game, save, sfx, music);
   game.ready();
 
   // Browsers only allow sound after a touch or a key press.
-  window.addEventListener('pointerdown', () => sfx.unlock());
+  window.addEventListener('pointerdown', () => {
+    sfx.unlock();
+    music.unlock();
+  });
   window.addEventListener('keydown', (e) => {
     sfx.unlock();
-    if (e.code === 'KeyM' && !e.repeat) sfx.toggleMute();
+    music.unlock();
+    if (e.code === 'KeyM' && !e.repeat) {
+      sfx.toggleMute();
+      music.setMuted(sfx.isMuted);
+    }
   });
 
   const loop = (now: number): void => {
     game.frame(now);
+    screens.update();
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -37,9 +51,11 @@ function boot(): void {
     if (document.hidden) {
       game.pause();
       sfx.suspend();
+      music.setHidden(true);
     } else {
       game.resetClock();
       sfx.unlock();
+      music.setHidden(false);
     }
   });
 

@@ -1,17 +1,5 @@
 import { formationRadius } from '../src/game/Clone';
-import {
-  CLONE_BOX_AMOUNTS,
-  CLONE_CAP,
-  CLONE_FIRE_RATE_FACTOR,
-  COLS,
-  DROP_CLONE_1,
-  FIRE_RATE,
-  GATE_TYPE,
-  MARCH_SPEED,
-  SHOOTER_Y,
-  UNIT,
-  WINDOW_ROWS,
-} from '../src/game/constants';
+import { CLONE_BOX_AMOUNTS, COLS, DROP_CLONE_1, GATE_TYPE, SHOOTER_Y, UNIT } from '../src/game/constants';
 import { createScratch, type SimScratch, stepSim } from '../src/game/Sim';
 import type { SimOptions } from '../src/game/World';
 import { formatIssue, parseMap } from '../src/parsers/markdownMapParser';
@@ -21,6 +9,9 @@ export const IDLE: SimInput = { targetDelta: 0, keyDir: 0 };
 
 /** Sim options for tests about the shooter alone: no starting clones. */
 export const LONE: Partial<SimOptions> = { startClones: 0 };
+
+/** The bot leaves a rail to sweep when the nearest rat is this many rows from the swarm. */
+const BOT_CLOSE_ROWS = 26;
 
 /** Minions that fit across the lane: each covers UNIT cells. */
 export const UNITS_ACROSS = COLS / UNIT;
@@ -67,55 +58,48 @@ export const gatesOf = (sim: SimState): Enemy[] => activeEnemies(sim).filter((e)
 /**
  * A simple player, used to check that a level can be won, not to play well.
  *
- *  1. With time to spare before the rats reach the goal line, catch a falling
- *     box, or else walk onto the rail of the nearest gate and let it arrive.
- *     A gate counts as time well spent when the cats it adds still leave time
- *     to clear the lane afterwards.
- *  2. Otherwise the rats come first. Sweep: move the swarm over the nearest
- *     column that still has rats of the leading band, a swarm-width at a time,
- *     and hold until it is clear.
+ *  1. Rats close to the swarm come first: sweep them.
+ *  2. Otherwise catch a falling box, or get under a tank bubble to shoot it open.
+ *  3. Otherwise walk onto the rail of a panel that will arrive before any rat
+ *     does, the richer one when two arrive together, and let it come.
+ *  4. Otherwise sweep: move the swarm over the nearest column that still has
+ *     rats of the leading band, a swarm-width at a time, and hold until it is clear.
  */
 export function botInput(sim: SimState, out: SimInput): SimInput {
   const x = sim.shooter.targetX;
   const radius = formationRadius(sim.clones);
   let goal = x;
 
+  // Front edge of the rat nearest the goal line.
+  let danger = -Infinity;
+  for (const e of sim.enemies.items) {
+    if (!e.active || e.type === GATE_TYPE || e.y + e.h / 2 < 0) continue;
+    if (e.y + e.h / 2 > danger) danger = e.y + e.h / 2;
+  }
+  const close = danger > SHOOTER_Y - radius - BOT_CLOSE_ROWS;
+
   let box: { x: number; y: number } | null = null;
   for (const p of sim.powerups.items) {
     if (p.active && p.y < SHOOTER_Y + 2 && (box === null || p.y > box.y)) box = p;
   }
 
-  let danger = -Infinity;
-  let hp = 0;
-  for (const e of sim.enemies.items) {
-    if (!e.active || e.type === GATE_TYPE || e.y < 0) continue;
-    hp += e.hp;
-    if (e.y + e.h / 2 > danger) danger = e.y + e.h / 2;
-  }
-  const secondsLeft = danger === -Infinity ? Infinity : (WINDOW_ROWS - danger) / MARCH_SPEED;
-  // Time to clear what is on the lane: sweeping wastes part of the fire.
-  const clearTime = (clones: number): number =>
-    (hp / (FIRE_RATE * (1 + Math.min(CLONE_CAP, clones) * CLONE_FIRE_RATE_FACTOR))) * 1.8 + 3;
-  const secondsNeeded = clearTime(sim.clones);
-
-  // The gate that will reach the swarm's row soonest.
+  // The panel that reaches the swarm soonest, among those ahead of every rat.
   let gate: Enemy | null = null;
+  let gateWorth = 0;
   for (const e of sim.enemies.items) {
     if (!e.active || e.type !== GATE_TYPE || e.y < 0 || e.y > SHOOTER_Y + radius) continue;
-    if (gate === null || e.y > gate.y) gate = e;
+    if (e.y + e.h / 2 <= danger) continue;
+    // A weapon counts for about as much as twenty cats.
+    const worth = CLONE_BOX_AMOUNTS[e.drop - DROP_CLONE_1] ?? 20;
+    if (gate === null || e.y > gate.y + 1 || (e.y > gate.y - 1 && worth > gateWorth)) {
+      gate = e;
+      gateWorth = worth;
+    }
   }
 
-  const spare = secondsLeft > secondsNeeded + 2;
-  // Waiting for the gate, then clearing the lane with the cats it adds.
-  let gateTime = Infinity;
-  if (gate !== null) {
-    const reward = CLONE_BOX_AMOUNTS[gate.drop - DROP_CLONE_1] ?? 1;
-    const wait = Math.max(0, SHOOTER_Y - radius - gate.y) / gate.speed;
-    gateTime = wait + clearTime(sim.clones + reward);
-  }
-  if (spare && box !== null) {
+  if (!close && box !== null) {
     goal = box.x;
-  } else if (gate !== null && (spare || secondsLeft > gateTime + 2)) {
+  } else if (!close && gate !== null) {
     goal = gate.x;
   } else if (danger !== -Infinity) {
     // Nearest column that still holds a rat of the leading band (24 rows deep at most).
@@ -123,7 +107,7 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     let column = x;
     let reach = 0;
     for (const e of sim.enemies.items) {
-      if (!e.active || e.type === GATE_TYPE || e.y < 0 || e.y + e.h / 2 < danger - 24) continue;
+      if (!e.active || e.type === GATE_TYPE || e.y + e.h / 2 < 0 || e.y + e.h / 2 < danger - 24) continue;
       const distance = Math.abs(e.x - x);
       if (distance < best) {
         best = distance;
@@ -133,7 +117,9 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     }
     // A column is under fire only when a cat stands in it. Step past it by most of the
     // swarm's width, so each stop covers fresh columns.
-    goal = best < reach * 0.9 ? x : column + Math.sign(column - x) * radius * 0.7;
+    // A big rat is fought from straight in front of it, so the whole swarm hits it.
+    if (reach > UNIT) goal = column;
+    else goal = best < reach * 0.9 ? x : column + Math.sign(column - x) * radius * 0.7;
   }
 
   const delta = goal - x;

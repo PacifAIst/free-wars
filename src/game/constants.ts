@@ -40,11 +40,11 @@ export const MAX_RENDER_RESOLUTION = 2;
 // --- D1: speeds ----------------------------------------------------------------
 
 /**
- * Converts SPEC speed values to gu/s. Spec 10 -> 6 gu/s: a minion crosses the
- * 150 rows in play in 25 seconds. The plan started at 0.075; the owner
- * raised it in decisions A18 and A29, and doubled it again in A31.
+ * Converts SPEC speed values to gu/s. Spec 10 -> 12 gu/s: a minion crosses the
+ * 150 rows in play in 12.5 seconds. The plan started at 0.075; the owner
+ * raised it in decisions A18 and A29, and doubled it in A31 and again in A33.
  */
-export const SPEED_SCALE = 0.6;
+export const SPEED_SCALE = 1.2;
 /** Speed at which the row stream advances: the E1-E3 march speed. */
 export const MARCH_SPEED_SPEC = 10;
 export const MARCH_SPEED = MARCH_SPEED_SPEC * SPEED_SCALE;
@@ -62,18 +62,24 @@ export interface EnemyStats {
   readonly boss: boolean;
 }
 
+/**
+ * A33: the owner found the swarm overpowered against the big rats and asked for
+ * four times their HP. It applies to every big enemy, E4 to E8.
+ */
+export const BIG_HP_FACTOR = 4;
+
 /** Indexed by enemy type 1..8. Index 0 is unused. */
 export const ENEMY_STATS: readonly EnemyStats[] = [
   { w: 0, h: 0, hp: 0, speedSpec: 0, boss: false },
   { w: cells(1), h: cells(1), hp: 1, speedSpec: 10, boss: false }, // E1 minion
   { w: cells(1), h: cells(1), hp: 2, speedSpec: 10, boss: false }, // E2 sergeant
   { w: cells(1), h: cells(1), hp: 4, speedSpec: 10, boss: false }, // E3 elite
-  { w: cells(8), h: cells(8), hp: 200, speedSpec: 8, boss: false }, // E4 sniper
-  { w: cells(20), h: cells(20), hp: 2000, speedSpec: 10, boss: true }, // E5 boss
-  { w: cells(20), h: cells(20), hp: 3000, speedSpec: 10, boss: true }, // E6 charger
-  { w: cells(20), h: cells(20), hp: 4000, speedSpec: 5, boss: true }, // E7 boss sniper
+  { w: cells(8), h: cells(8), hp: 200 * BIG_HP_FACTOR, speedSpec: 8, boss: false }, // E4 sniper
+  { w: cells(20), h: cells(20), hp: 2000 * BIG_HP_FACTOR, speedSpec: 10, boss: true }, // E5 boss
+  { w: cells(20), h: cells(20), hp: 3000 * BIG_HP_FACTOR, speedSpec: 10, boss: true }, // E6 charger
+  { w: cells(20), h: cells(20), hp: 4000 * BIG_HP_FACTOR, speedSpec: 5, boss: true }, // E7 boss sniper
   // E8 would be 60 cells wide at twice its SPEC size; it is as wide as the lane instead.
-  { w: cells(30), h: cells(30), hp: 10000, speedSpec: 5, boss: true }, // E8 robo rat
+  { w: cells(30), h: cells(30), hp: 10000 * BIG_HP_FACTOR, speedSpec: 5, boss: true }, // E8 robo rat
   { w: cells(8), h: cells(2), hp: 1, speedSpec: 10, boss: false }, // rail gate (GATE_TYPE)
 ];
 
@@ -140,11 +146,17 @@ export const E8_ROCKET_HP = 200;
 export const E8_ROCKET_SPEED_SPEC = 50;
 export const E8_ROCKET_AOE = 20;
 
-// Boss smash and charge (SPEC 7.3)
+/**
+ * Punches (SPEC 7.3, decision A33). A big rat whose body reaches the swarm winds
+ * up for SMASH_INTERVAL seconds and then punches, again and again while the
+ * swarm is in reach. Each punch kills this many cats, the ones nearest the
+ * fist, by enemy type. SPEC gives 15 for E5 and 30 for E6; the fat rat and the
+ * two rocket bosses punch too.
+ */
 export const SMASH_INTERVAL = 0.5;
-export const E5_SMASH_KILLS = 15;
-export const E6_SMASH_KILLS = 30;
-export const E6_CHARGE_RANGE = 12;
+export const PUNCH_KILLS: readonly number[] = [0, 0, 0, 0, 10, 15, 30, 15, 30];
+/** E6 charges at this speed while its front is within this distance of the swarm. */
+export const E6_CHARGE_RANGE = 12 * UNIT;
 export const E6_CHARGE_SPEED_SPEC = 20;
 
 // --- D4: row streaming ---------------------------------------------------------
@@ -181,6 +193,8 @@ export const MUZZLE_OFFSET = 0.6 * UNIT;
 export const SHOOTER_FIRE_JITTER = 0.2;
 export const CLONE_FIRE_JITTER = 0.35;
 
+// --- Weapons (SPEC 8 and 9). Sizes are SPEC cells times UNIT, like everything else. ---
+
 // Minigun (SPEC 8.1)
 export const MINIGUN_RATE_FACTOR = 2;
 export const MINIGUN_PICKUP_SECONDS = 5;
@@ -191,24 +205,36 @@ export const LASER_CHARGE_SECONDS = 2;
 export const LASER_BEAM_SECONDS = 0.5;
 export const LASER_COOLDOWN_SECONDS = 3;
 export const LASER_TOTAL_SECONDS = 10;
-export const LASER_WIDTH = 4;
-/** B5: a cast kills E1-E3 outright and deals this much to E4-E8 and rockets. */
-export const LASER_BIG_DMG = 40;
+export const LASER_WIDTH = 4 * UNIT;
+/** B5: a cast kills E1-E3 outright and deals this much to E4-E8: a fifth of a fat rat's HP. */
+export const LASER_BIG_DMG = 40 * BIG_HP_FACTOR;
 
 // Rocket mode (SPEC 8; B6)
 export const ROCKET_MODE_SECONDS = 10;
+/** Rocket pickups stack up to this many seconds, like the minigun. */
+export const ROCKET_CAP_SECONDS = 30;
 export const ROCKET_DAMAGE = 3;
-export const ROCKET_AOE = 4;
+/** Side of the square a rocket's explosion covers. */
+export const ROCKET_AOE = 4 * UNIT;
 export const ROCKET_FIRE_RATE = 1;
+export const ROCKET_SPEED = 60;
 /** B6: only the shooter and the 6 inner-ring clones fire rockets. */
 export const ROCKET_SHOOTERS = 7;
 
 // Tank (SPEC 8, 9; D8)
 export const TANK_SECONDS = 5;
+/** Tank pickups stack up to this many seconds. */
+export const TANK_CAP_SECONDS = 15;
 export const TANK_BUBBLE_HP = 50;
-export const TANK_SIZE = 8;
+/** Width and depth of the bubble the tank falls in. Only shots open it. */
+export const TANK_BUBBLE_SIZE = 5 * UNIT;
+/** The bubble drifts down with the army, slower than a box, so there is time to shoot it open. */
+export const TANK_BUBBLE_SPEED = MARCH_SPEED;
+export const TANK_SIZE = 8 * UNIT;
 export const TANK_DAMAGE = 8;
-export const TANK_ROCKET_AOE = 8;
+/** A big enemy under the tank takes TANK_DAMAGE this often; minions die at once. */
+export const TANK_CONTACT_INTERVAL = 0.25;
+export const TANK_ROCKET_AOE = 8 * UNIT;
 export const TANK_ROCKETS_PER_SEC = 2;
 
 // --- Input (SPEC 5; D2) --------------------------------------------------------
@@ -257,13 +283,10 @@ export const DROP_WEIGHTS = {
   laser: 10,
   tank: 5,
 } as const;
-/** B7: enemies this size or larger are rate-limited when killing clones by contact. */
-export const BIG_CONTACT_MIN_SIZE = 8 * UNIT;
-export const BIG_CONTACT_RATE = 4;
 /** D12: damage an enemy takes when it trades with a cat. */
 export const CONTACT_DAMAGE = 1;
-/** B8: powerup boxes fall faster than the army marches, so they are not buried in it. */
-export const POWERUP_SPEED = 12.0;
+/** B8: powerup boxes fall twice as fast as the army marches, so they are not buried in it. */
+export const POWERUP_SPEED = 24.0;
 /** B9: a box is picked up this far outside the outermost clone ring, along the lane. */
 export const PICKUP_MARGIN = 0.8 * UNIT;
 /** Width of a falling box, dropped by the fat rats (A29: twice the first size). */
@@ -299,6 +322,18 @@ export const FX_BURST_SECONDS = 0.5;
 /** Seconds an enemy stays tinted after taking a hit. */
 export const HIT_FLASH_SECONDS = 0.08;
 export const FX_PICKUP_SECONDS = 0.6;
+
+// --- Sound ---------------------------------------------------------------------
+
+/** Level of the sound effects, 0 to 1. */
+export const SFX_VOLUME = 0.7;
+/** Music plays at this fraction of the sound-effect level (owner's rule: 50% below). */
+export const MUSIC_VOLUME_RATIO = 0.5;
+/**
+ * Music tracks for levels: `music/1.mp3` to `music/11.mp3`. Track 0 is kept for
+ * the intro screen. The 44 maps go round the 11 tracks four times.
+ */
+export const MUSIC_TRACKS = 11;
 
 // --- Presentation (render only; no effect on the simulation) ---------------------
 

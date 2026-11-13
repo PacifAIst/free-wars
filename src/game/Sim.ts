@@ -6,7 +6,8 @@ import { stepEnemies } from './Enemy';
 import { stepFx } from './Fx';
 import { stepShooter } from './Player';
 import { stepPowerups } from './Powerup';
-import { fireShooter, stepBullets } from './Projectile';
+import { fireShooter, stepBullets, stepRockets } from './Projectile';
+import { stepWeapons } from './Weapon';
 import { createWorld, type SimOptions, streamRows } from './World';
 
 /** Working data that is rebuilt from the sim state and never serialised. */
@@ -41,6 +42,8 @@ export function stepSim(sim: SimState, map: MapData, input: SimInput, scratch: S
   scratch.hash.separate(sim.enemies, sim.shooter.x);
   scratch.hash.build(sim.enemies);
   stepBullets(sim, scratch.hash);
+  stepRockets(sim, scratch.hash);
+  stepWeapons(sim, scratch.hash);
   if (sim.phase === 'playing') stepContact(sim, scratch.hash);
   stepPowerups(sim);
   stepFx(sim);

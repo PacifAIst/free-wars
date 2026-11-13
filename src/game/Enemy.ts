@@ -1,9 +1,11 @@
 import type { Enemy, SimState } from '../types';
-import { addClones, formationRadius } from './Clone';
+import { formationRadius } from './Clone';
 import {
   BIG_CHASE_SPEED,
   BIG_ENEMY_MIN_TYPE,
   COLS,
+  E6_CHARGE_RANGE,
+  E6_CHARGE_SPEED_SPEC,
   ENEMY_STATS,
   FUNNEL_END_ROWS,
   FUNNEL_START_ROW,
@@ -19,7 +21,7 @@ import {
 } from './constants';
 import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
-import { rewardAmount, rollDrop, spawnDrop } from './Powerup';
+import { grantDrop, rollDrop, spawnDrop } from './Powerup';
 
 /** A minion aims at a point at least this far down the lane, so it never turns fully sideways. */
 const MIN_AIM_AHEAD = 0.5;
@@ -41,6 +43,10 @@ export function makeEnemy(): Enemy {
     flash: 0,
     row: 0,
     contact: 0,
+    winding: false,
+    punches: 0,
+    swing: 0,
+    cast: 0,
     swept: -1,
     quota: 0,
   };
@@ -66,6 +72,10 @@ function place(sim: SimState, type: number, x: number, row: number, frontY: numb
   e.flash = 0;
   e.row = row;
   e.contact = 0;
+  e.winding = false;
+  e.punches = 0;
+  e.swing = 9;
+  e.cast = 0;
   e.swept = -1;
   e.quota = 0;
   return true;
@@ -119,10 +129,10 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
     return false;
   }
   if (e.type === GATE_TYPE) {
-    const clones = rewardAmount(sim, e.drop > 0 ? e.drop : rollDrop(sim));
-    addClones(sim, clones);
-    spawnFx(sim, FX_GATE, e.x, e.y, clones);
+    const { x, y } = e;
+    const drop = e.drop > 0 ? e.drop : rollDrop(sim);
     poolFree(sim.enemies, index);
+    grantDrop(sim, drop, x, y, FX_GATE);
     return true;
   }
   const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
@@ -170,7 +180,13 @@ export function stepEnemies(sim: SimState): void {
     }
 
     if (e.type >= BIG_ENEMY_MIN_TYPE) {
-      e.y += e.speed * SIM_DT;
+      let speed = e.speed;
+      if (e.type === 6) {
+        // SPEC 7.3: the charger runs at the swarm once it is close, until it touches it.
+        const gap = SHOOTER_Y - formationRadius(sim.clones) - (e.y + e.h / 2);
+        if (gap > 0 && gap < E6_CHARGE_RANGE) speed = E6_CHARGE_SPEED_SPEC * SPEED_SCALE;
+      }
+      e.y += speed * SIM_DT;
       const step = BIG_CHASE_SPEED * SIM_DT;
       const dx = targetX - e.x;
       e.x += dx > step ? step : dx < -step ? -step : dx;

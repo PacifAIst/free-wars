@@ -17,6 +17,9 @@ export class Batch {
   readonly outline: InstancedMesh | null;
   private readonly matrices: Float32Array;
   private readonly colors: Float32Array | null;
+  /** Two extra numbers per instance, read by the material's shader (the punch of a big rat). */
+  private readonly aux: Float32Array | null;
+  private readonly auxAttribute: InstancedBufferAttribute | null;
   private readonly capacity: number;
   private count = 0;
 
@@ -26,6 +29,7 @@ export class Batch {
     capacity: number,
     tinted = false,
     outline: Material | null = null,
+    auxName = '',
   ) {
     this.capacity = capacity;
     this.mesh = new InstancedMesh(geometry, material, capacity);
@@ -49,6 +53,15 @@ export class Batch {
       this.mesh.instanceColor.setUsage(DynamicDrawUsage);
     } else {
       this.colors = null;
+    }
+    if (auxName !== '') {
+      this.aux = new Float32Array(capacity * 2);
+      this.auxAttribute = new InstancedBufferAttribute(this.aux, 2);
+      this.auxAttribute.setUsage(DynamicDrawUsage);
+      geometry.setAttribute(auxName, this.auxAttribute);
+    } else {
+      this.aux = null;
+      this.auxAttribute = null;
     }
   }
 
@@ -76,8 +89,19 @@ export class Batch {
       this.colors[c + 1] = 1;
       this.colors[c + 2] = 1;
     }
+    if (this.aux) {
+      this.aux[this.count * 2] = 0;
+      this.aux[this.count * 2 + 1] = 0;
+    }
     this.count++;
     return true;
+  }
+
+  /** Sets the two extra numbers of the instance added last. Only for batches created with `auxName`. */
+  setAux(a: number, b: number): void {
+    if (!this.aux || this.count === 0) return;
+    this.aux[(this.count - 1) * 2] = a;
+    this.aux[(this.count - 1) * 2 + 1] = b;
   }
 
   /**
@@ -115,6 +139,11 @@ export class Batch {
     mesh.instanceMatrix.clearUpdateRanges();
     mesh.instanceMatrix.addUpdateRange(0, this.count * 16);
     mesh.instanceMatrix.needsUpdate = true;
+    if (this.auxAttribute) {
+      this.auxAttribute.clearUpdateRanges();
+      this.auxAttribute.addUpdateRange(0, this.count * 2);
+      this.auxAttribute.needsUpdate = true;
+    }
     if (mesh.instanceColor) {
       mesh.instanceColor.clearUpdateRanges();
       mesh.instanceColor.addUpdateRange(0, this.count * 3);

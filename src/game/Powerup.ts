@@ -10,19 +10,30 @@ import {
   DROP_ROCKET,
   DROP_TANK,
   DROP_WEIGHTS,
+  HIT_FLASH_SECONDS,
+  LASER_TOTAL_SECONDS,
+  MINIGUN_CAP_SECONDS,
+  MINIGUN_PICKUP_SECONDS,
   PICKUP_MARGIN,
   POWERUP_SPEED,
   POWERUP_WIDTH,
+  ROCKET_CAP_SECONDS,
+  ROCKET_MODE_SECONDS,
   SHOOTER_Y,
   SIM_DT,
+  TANK_BUBBLE_HP,
+  TANK_BUBBLE_SIZE,
+  TANK_BUBBLE_SPEED,
+  TANK_CAP_SECONDS,
+  TANK_SECONDS,
   WINDOW_ROWS,
 } from './constants';
-import { FX_PICKUP, spawnFx } from './Fx';
+import { FX_HIT, FX_PICKUP, FX_TANK, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
 import { nextRandom } from './rng';
 
 export function makePowerup(): Powerup {
-  return { active: false, kind: 0, x: 0, y: 0, prevY: 0 };
+  return { active: false, kind: 0, x: 0, y: 0, prevY: 0, hp: 0, flash: 0 };
 }
 
 /** True for the four clone boxes (+1, +3, +10, +50). */
@@ -56,38 +67,81 @@ export function rollDrop(sim: SimState): number {
   return DROP_CLONE_1 + pickWeighted(sim, CLONE_BOX_WEIGHTS);
 }
 
+/** The tank rolls out: the swarm rides in it for TANK_SECONDS (SPEC 8.1). */
+export function startTank(sim: SimState): void {
+  if (sim.tank <= 0) {
+    sim.tankCooldown = 0;
+    spawnFx(sim, FX_TANK, sim.shooter.x, SHOOTER_Y, 1, 1);
+  }
+  sim.tank = Math.min(TANK_CAP_SECONDS, sim.tank + TANK_SECONDS);
+}
+
 /**
- * The clone box a drop code stands for.
- *
- * Only clone boxes exist so far. The weapon powerups (codes P5-P8) arrive with
- * milestone M5; until then a weapon code counts as a clone box, rolled on the
- * clone-box weights, so a broken gate is never empty-handed.
+ * Gives the swarm what a drop code stands for: clones, or one of the weapons
+ * (SPEC 9). `fxKind` says how it arrived: caught as a box or collected from a
+ * panel. The effect carries the clones gained as its size and the code as its tag.
  */
-function asCloneBox(sim: SimState, kind: number): number {
-  return isCloneBox(kind) ? kind : DROP_CLONE_1 + pickWeighted(sim, CLONE_BOX_WEIGHTS);
+export function grantDrop(sim: SimState, kind: number, x: number, y: number, fxKind: number): void {
+  let amount = 0;
+  if (isCloneBox(kind)) {
+    amount = CLONE_BOX_AMOUNTS[kind - DROP_CLONE_1];
+    addClones(sim, amount);
+  } else if (kind === DROP_MINIGUN) {
+    sim.minigun = Math.min(MINIGUN_CAP_SECONDS, sim.minigun + MINIGUN_PICKUP_SECONDS);
+  } else if (kind === DROP_ROCKET) {
+    sim.rocketMode = Math.min(ROCKET_CAP_SECONDS, sim.rocketMode + ROCKET_MODE_SECONDS);
+  } else if (kind === DROP_LASER) {
+    // A fresh laser starts charging; one already running is topped up and keeps its rhythm.
+    if (sim.laser <= 0) sim.laserClock = 0;
+    sim.laser = LASER_TOTAL_SECONDS;
+  } else if (kind === DROP_TANK) {
+    startTank(sim);
+  }
+  spawnFx(sim, fxKind, x, y, amount, kind);
 }
 
-/** Number of clones a drop code is worth. */
-export function rewardAmount(sim: SimState, kind: number): number {
-  return CLONE_BOX_AMOUNTS[asCloneBox(sim, kind) - DROP_CLONE_1];
-}
-
-/** Drops a falling box where a fat rat died. */
+/**
+ * Drops a falling powerup where an enemy died. Clone boxes and the minigun,
+ * laser and rocket boxes are caught by touch. The tank comes in a bubble that
+ * only shots can open (SPEC 9).
+ */
 export function spawnDrop(sim: SimState, kind: number, x: number, y: number): void {
   const index = poolAlloc(sim.powerups);
   if (index < 0) return;
   const p = sim.powerups.items[index];
-  p.kind = asCloneBox(sim, kind);
+  p.kind = kind;
   p.x = x;
   p.y = y;
   p.prevY = y;
+  p.hp = kind === DROP_TANK ? TANK_BUBBLE_HP : 0;
+  p.flash = 0;
+}
+
+/** True when the point is inside tank bubble `p`. */
+export function inBubble(p: Powerup, x: number, y: number): boolean {
+  const half = TANK_BUBBLE_SIZE / 2;
+  return p.active && p.kind === DROP_TANK && Math.abs(x - p.x) < half && Math.abs(y - p.y) < half;
+}
+
+/** A shot hits a tank bubble. At 0 HP it pops and the tank rolls out. */
+export function damageBubble(sim: SimState, index: number, amount: number): void {
+  const p = sim.powerups.items[index];
+  p.hp -= amount;
+  if (p.hp > 0) {
+    p.flash = HIT_FLASH_SECONDS;
+    spawnFx(sim, FX_HIT, p.x, p.y + TANK_BUBBLE_SIZE / 2, 1);
+    return;
+  }
+  spawnFx(sim, FX_PICKUP, p.x, p.y, 0, DROP_TANK);
+  poolFree(sim.powerups, index);
+  startTank(sim);
 }
 
 /**
  * Boxes fall towards the goal line (B8). B9: a box is picked up when it
  * overlaps the formation. Boxes are wide, so the test is the formation's
- * circle against the box's width. A box that
- * reaches the goal line is lost.
+ * circle against the box's width. A box that reaches the goal line is lost.
+ * A tank bubble is never picked up by touch.
  */
 export function stepPowerups(sim: SimState): void {
   const { items } = sim.powerups;
@@ -95,16 +149,22 @@ export function stepPowerups(sim: SimState): void {
     const p = items[i];
     if (!p.active) continue;
     p.prevY = p.y;
-    p.y += POWERUP_SPEED * SIM_DT;
+    if (p.flash > 0) p.flash -= SIM_DT;
 
+    if (p.kind === DROP_TANK) {
+      p.y += TANK_BUBBLE_SPEED * SIM_DT;
+      if (p.y >= WINDOW_ROWS) poolFree(sim.powerups, i);
+      continue;
+    }
+
+    p.y += POWERUP_SPEED * SIM_DT;
     const radius = formationRadius(sim.clones);
     const dx = Math.abs(p.x - sim.shooter.x);
     const dy = Math.abs(p.y - SHOOTER_Y);
     if (dx <= radius + POWERUP_WIDTH / 2 && dy <= radius + PICKUP_MARGIN) {
-      const amount = CLONE_BOX_AMOUNTS[p.kind - DROP_CLONE_1];
-      addClones(sim, amount);
-      spawnFx(sim, FX_PICKUP, p.x, p.y, amount);
+      const { kind, x, y } = p;
       poolFree(sim.powerups, i);
+      grantDrop(sim, kind, x, y, FX_PICKUP);
     } else if (p.y >= WINDOW_ROWS) {
       poolFree(sim.powerups, i);
     }

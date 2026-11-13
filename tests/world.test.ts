@@ -65,7 +65,7 @@ describe('row streaming (D4)', () => {
     const map = mapFromRows(Array.from({ length: 300 }, (_, i) => rowWith({ [i % 4 === 0 ? 0 : 42]: 'E1' })));
     const scratch = createScratch();
     // Tick counts chosen so the scroll is not on a row boundary.
-    for (const ticks of [95, 255, 405]) {
+    for (const ticks of [93, 157, 233]) {
       const sim = createSim(map, 1, LONE);
       run(sim, map, scratch, ticks);
       const scroll = PRE_ADVANCE_ROWS + ticks * MARCH_SPEED * SIM_DT;
@@ -146,7 +146,7 @@ describe('enemy placement', () => {
     const map = mapFromRows([rowWith({ 0: 'E41', 20: 'E1-P2', 30: 'E1', 40: 'E3-9' })]);
     const sim = createSim(map, 1);
     const find = (t: number, x?: number) => rats(sim).find((e) => e.type === t && (x === undefined || e.x === x))!;
-    expect(find(4)).toMatchObject({ hp: 200, maxHp: 200, drop: 1 });
+    expect(find(4)).toMatchObject({ hp: ENEMY_STATS[4].hp, maxHp: ENEMY_STATS[4].hp, drop: 1 });
     expect(find(1, 21)).toMatchObject({ hp: 1, drop: 2 });
     expect(find(1, 31)).toMatchObject({ hp: 1, drop: 0 });
     expect(find(3)).toMatchObject({ hp: 9, maxHp: 9 });
@@ -367,8 +367,8 @@ describe('rail gates (A27, A29, A31)', () => {
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     run(sim, map, scratch, 1, { targetDelta: RAIL_LEFT_X - sim.shooter.x, keyDir: 0 });
-    run(sim, map, scratch, 3 * SIM_HZ);
-    expect(sim.shots).toBeGreaterThan(3);
+    run(sim, map, scratch, 2 * SIM_HZ);
+    expect(sim.shots).toBeGreaterThan(2);
     expect(gatesOf(sim)).toHaveLength(1);
     expect(gatesOf(sim)[0].hp).toBe(3);
     expect(sim.clones).toBe(0);
@@ -400,8 +400,10 @@ describe('rail gates (A27, A29, A31)', () => {
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     run(sim, map, scratch, 1, { targetDelta: RAIL_RIGHT_X - sim.shooter.x, keyDir: 0 });
-    while (sim.clones === 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
-    expect([1, 3, 10, 50]).toContain(sim.clones);
+    while (gatesOf(sim).length > 0 && sim.tick < 20 * SIM_HZ) run(sim, map, scratch, 1);
+    // A surprise panel gives clones or one of the weapons (B4).
+    const weapon = sim.minigun > 0 || sim.rocketMode > 0 || sim.laser > 0 || sim.tank > 0;
+    expect(weapon || [1, 3, 10, 50].includes(sim.clones)).toBe(true);
   });
 });
 

@@ -53,8 +53,19 @@ export interface Enemy {
   flash: number;
   /** Grid row this enemy came from. */
   row: number;
-  /** B7: seconds until a big enemy can kill another cat by contact. */
+  /**
+   * A countdown in seconds. For a big enemy that is winding up, the time until
+   * its punch lands; under the tank, the time until it is crushed again.
+   */
   contact: number;
+  /** Big enemies: true from the moment the swarm comes in reach until the punch lands or the swarm gets away. */
+  winding: boolean;
+  /** Big enemies: punches landed so far. The arms take turns. */
+  punches: number;
+  /** Big enemies: seconds since the last punch landed. */
+  swing: number;
+  /** The last laser cast that damaged this enemy: a cast hurts a big enemy only once. */
+  cast: number;
   /**
    * Gates only (A29). `swept` is -1 until the gate reaches the swarm, then the
    * position of its front edge at its last kill. `quota` is how many cats it
@@ -72,6 +83,20 @@ export interface Powerup {
   x: number;
   y: number;
   prevY: number;
+  /** Tank bubble only: shots it still takes to open. */
+  hp: number;
+  /** Seconds of hit flash left. */
+  flash: number;
+}
+
+/** A rocket fired by the swarm or the tank. */
+export interface Rocket {
+  active: boolean;
+  x: number;
+  y: number;
+  prevY: number;
+  /** 0 from a cat, 1 from the tank. */
+  kind: number;
 }
 
 export interface Bullet {
@@ -136,6 +161,20 @@ export interface SimState {
   fxCount: number;
   /** Bullets fired by the swarm so far. */
   shots: number;
+  /** Rockets fired by the swarm and the tank so far. */
+  rocketsFired: number;
+  /** Seconds of minigun fire left (SPEC 8.1). */
+  minigun: number;
+  /** Seconds of rocket mode left. */
+  rocketMode: number;
+  /** Seconds of laser mode left, and the time into its charge, beam, cooling cycle. */
+  laser: number;
+  laserClock: number;
+  /** Laser casts so far. */
+  laserCasts: number;
+  /** Seconds of tank left, and seconds until the tank fires again. */
+  tank: number;
+  tankCooldown: number;
   /** True once the "enemy pool full" warning has been logged. */
   poolFullLogged: boolean;
   shooter: ShooterState;
@@ -146,6 +185,7 @@ export interface SimState {
   enemies: Pool<Enemy>;
   powerups: Pool<Powerup>;
   bullets: Pool<Bullet>;
+  rockets: Pool<Rocket>;
   fx: Pool<Fx>;
 }
 

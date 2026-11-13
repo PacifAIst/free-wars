@@ -1,8 +1,7 @@
 import type { Enemy, SimState } from '../types';
 import type { SpatialHash } from './Collision';
 import {
-  BIG_CONTACT_MIN_SIZE,
-  BIG_CONTACT_RATE,
+  BIG_ENEMY_MIN_TYPE,
   CAT_RADIUS,
   CLONE_CAP,
   CLONE_FIRE_JITTER,
@@ -12,24 +11,28 @@ import {
   GATE_TYPE,
   GATES_ARE_SHOT,
   MUZZLE_OFFSET,
+  PUNCH_KILLS,
   RING_SLOTS_PER_RING,
+  ROCKET_SHOOTERS,
   RING_SPACING,
   SHOOTER_Y,
   SIM_DT,
+  SMASH_INTERVAL,
 } from './constants';
 import { damageEnemy } from './Enemy';
-import { FX_CAT, FX_GATE, spawnFx } from './Fx';
+import { FX_CAT, FX_GATE, FX_PUNCH, spawnFx } from './Fx';
 import { SHOOTER_MAX_X, SHOOTER_MIN_X } from './Player';
 import { poolFree } from './Pool';
-import { rewardAmount, rollDrop } from './Powerup';
-import { BULLET_REGULAR, spawnBullet } from './Projectile';
+import { grantDrop, rollDrop } from './Powerup';
+import { fireWeapon } from './Projectile';
 import { nextRandom } from './rng';
 
 // The swarm. Clones are identical, so the state is just their number: clone i
 // stands in formation slot i. When one dies the formation re-packs, which
 // simply means the outermost slot empties (SPEC 6.2).
 
-const CLONE_FIRE_PERIOD = 1 / (FIRE_RATE * CLONE_FIRE_RATE_FACTOR);
+const CLONE_FIRE_RATE = FIRE_RATE * CLONE_FIRE_RATE_FACTOR;
+const CLONE_FIRE_PERIOD = 1 / CLONE_FIRE_RATE;
 
 /** Number of slots in rings 1..k. */
 const slotsThroughRing = (k: number): number => (RING_SLOTS_PER_RING * k * (k + 1)) / 2;
@@ -77,10 +80,6 @@ export function cloneY(slot: number): number {
   return SHOOTER_Y + SLOT_Y[slot];
 }
 
-/** Seconds a clone waits after a shot: the normal interval, varied at random so no two keep the same beat (A31). */
-function nextCloneWait(sim: SimState): number {
-  return CLONE_FIRE_PERIOD * (1 + (nextRandom(sim) * 2 - 1) * CLONE_FIRE_JITTER);
-}
 
 /** Adds up to `amount` clones; anything over the cap is discarded. Returns how many were added. */
 export function addClones(sim: SimState, amount: number): number {
@@ -92,14 +91,21 @@ export function addClones(sim: SimState, amount: number): number {
   return added;
 }
 
-/** Each clone fires straight up at half the shooter's rate (SPEC 6.2). */
+/**
+ * Each clone fires straight up at half the shooter's rate (SPEC 6.2), with
+ * whatever the swarm is armed with. The wait after a shot varies at random, so
+ * no two clones keep the same beat (A31). B6: in rocket mode only the shooter
+ * and the first clones fire rockets. Inside the tank nobody fires.
+ */
 export function fireClones(sim: SimState): void {
+  if (sim.tank > 0) return;
   const cooldowns = sim.cloneCooldowns;
   for (let slot = 0; slot < sim.clones; slot++) {
     cooldowns[slot] -= SIM_DT;
     if (cooldowns[slot] <= 0) {
-      spawnBullet(sim, cloneX(sim, slot), cloneY(slot) - MUZZLE_OFFSET, BULLET_REGULAR);
-      cooldowns[slot] += nextCloneWait(sim);
+      const rocketeer = slot < ROCKET_SHOOTERS - 1;
+      const wait = fireWeapon(sim, cloneX(sim, slot), cloneY(slot) - MUZZLE_OFFSET, rocketeer, CLONE_FIRE_RATE);
+      cooldowns[slot] += wait * (1 + (nextRandom(sim) * 2 - 1) * CLONE_FIRE_JITTER);
     }
   }
 }
@@ -160,10 +166,10 @@ function stepGates(sim: SimState): void {
 
     if (!GATES_ARE_SHOT) {
       if (!touchesSwarm(sim, gate)) continue;
-      const clones = rewardAmount(sim, gate.drop > 0 ? gate.drop : rollDrop(sim));
-      addClones(sim, clones);
-      spawnFx(sim, FX_GATE, gate.x, gate.y, clones);
+      const { x, y } = gate;
+      const drop = gate.drop > 0 ? gate.drop : rollDrop(sim);
       poolFree(sim.enemies, i);
+      grantDrop(sim, drop, x, y, FX_GATE);
       continue;
     }
 
@@ -195,19 +201,124 @@ function stepGates(sim: SimState): void {
   }
 }
 
+/** Scratch for `killNear`: squared distance of each slot from the fist, and whether its cat dies. */
+const slotDistance = new Float32Array(CLONE_CAP);
+const slotDies = new Uint8Array(CLONE_CAP);
+
 /**
- * Contact (D12, as changed by the owner in decisions A18 and A28).
+ * Kills the `kills` clones nearest the point (px, py): SPEC 7.3, "selected from
+ * the nearest-to-boss side".
  *
- * A rat that touches any cat, clone or shooter, kills it and takes
+ * Clones are identical, so the swarm state is still only their number and the
+ * formation closes ranks by emptying its outermost slots. A cat that dies in an
+ * inner slot is therefore replaced by a survivor from an outer slot, and each
+ * FX_CAT effect says so: `tag` is the dead cat's slot plus one, `size` the
+ * slot its replacement comes from. The renderer uses that to make the right
+ * cats vanish and the others run in.
+ *
+ * Returns false when the punch also reached the shooter, which loses the level.
+ */
+function killNear(sim: SimState, px: number, py: number, kills: number): boolean {
+  const n = sim.clones;
+  const count = Math.min(kills, n);
+  for (let s = 0; s < n; s++) {
+    const dx = cloneX(sim, s) - px;
+    const dy = cloneY(s) - py;
+    slotDistance[s] = dx * dx + dy * dy;
+    slotDies[s] = 0;
+  }
+  for (let k = 0; k < count; k++) {
+    let best = -1;
+    for (let s = 0; s < n; s++) {
+      if (slotDies[s] === 0 && (best < 0 || slotDistance[s] < slotDistance[best])) best = s;
+    }
+    slotDies[best] = 1;
+  }
+  const left = n - count;
+  // Next slot beyond the new formation whose cat lives: it moves into a dead cat's place.
+  let spare = left;
+  for (let s = 0; s < n; s++) {
+    if (slotDies[s] === 0) continue;
+    let from = s;
+    if (s < left) {
+      while (slotDies[spare] !== 0) spare++;
+      from = spare++;
+      sim.cloneCooldowns[s] = sim.cloneCooldowns[from];
+    }
+    spawnFx(sim, FX_CAT, cloneX(sim, s), cloneY(s), from, s + 1);
+  }
+  sim.clones = left;
+  if (kills <= n) return true;
+  spawnFx(sim, FX_CAT, sim.shooter.x, SHOOTER_Y, 1);
+  sim.phase = 'lost';
+  sim.lossReason = 'swarm';
+  return false;
+}
+
+/**
+ * Punches (SPEC 7.3, decision A33). A big rat whose body reaches the swarm
+ * winds up for SMASH_INTERVAL seconds, then punches: PUNCH_KILLS cats die at
+ * once. It keeps punching at that pace while the swarm is in reach. A swarm
+ * that gets clear during the wind-up is not hit.
+ *
+ * The cats lost are the ones nearest the fist (see `killNear`). A punch that
+ * finds fewer clones than it can kill takes the shooter too, and the level is
+ * lost.
+ *
+ * Returns false when the level was lost.
+ */
+function stepPunches(sim: SimState): boolean {
+  const reach = formationRadius(sim.clones) + CAT_RADIUS;
+  const sx = sim.shooter.x;
+  const enemies = sim.enemies.items;
+  for (let i = 0; i < sim.enemies.high; i++) {
+    const e = enemies[i];
+    if (!e.active || e.type < BIG_ENEMY_MIN_TYPE || e.type === GATE_TYPE) continue;
+    e.swing += SIM_DT;
+    // Distance from the swarm's centre to the nearest point of the rat's footprint.
+    const dx = Math.max(Math.abs(e.x - sx) - e.w / 2, 0);
+    const dy = Math.max(Math.abs(e.y - SHOOTER_Y) - e.h / 2, 0);
+    const inReach = dx * dx + dy * dy < reach * reach;
+    if (!e.winding) {
+      if (inReach && e.contact <= 0) {
+        e.winding = true;
+        e.contact = SMASH_INTERVAL;
+      }
+      continue;
+    }
+    if (e.contact > 0) continue;
+    if (!inReach) {
+      e.winding = false;
+      continue;
+    }
+
+    e.punches++;
+    e.swing = 0;
+    e.contact = SMASH_INTERVAL;
+    const kills = PUNCH_KILLS[e.type];
+    const px = Math.min(Math.max(sx, e.x - e.w / 2), e.x + e.w / 2);
+    const py = Math.min(Math.max(SHOOTER_Y, e.y - e.h / 2), e.y + e.h / 2);
+    spawnFx(sim, FX_PUNCH, px, py, Math.min(kills, sim.clones + 1), e.type);
+    if (!killNear(sim, px, py, kills)) return false;
+  }
+  return true;
+}
+
+/**
+ * Contact (D12, as changed by the owner in decisions A18, A28 and A33).
+ *
+ * A minion that touches any cat, clone or shooter, kills it and takes
  * CONTACT_DAMAGE. Every cat has a body: the rat only has to touch its outline.
  * The black shooter is not immune; when it dies the oldest clone is promoted,
- * and with no clone left the level is lost.
+ * and with no clone left the level is lost. Big rats do not trade one for one:
+ * they punch (see `stepPunches`).
  *
- * B7: a big enemy kills at most BIG_CONTACT_RATE cats per second.
+ * Inside the tank the swarm cannot be hurt; it still collects gates.
  */
 export function stepContact(sim: SimState, hash: SpatialHash): void {
   stepGates(sim);
-  if (sim.phase !== 'playing') return;
+  if (sim.phase !== 'playing' || sim.tank > 0) return;
+  if (!stepPunches(sim)) return;
 
   const enemies = sim.enemies.items;
   // Outermost slot first, down to -1, which stands for the shooter itself.
@@ -217,15 +328,11 @@ export function stepContact(sim: SimState, hash: SpatialHash): void {
     const found = hash.queryRect(x - CAT_RADIUS, y - CAT_RADIUS, x + CAT_RADIUS, y + CAT_RADIUS, sim.enemies, touching);
     let hit = -1;
     for (let n = 0; n < found && hit < 0; n++) {
-      const enemy = enemies[touching[n]];
-      if (enemy.type === GATE_TYPE) continue;
-      if (enemy.w >= BIG_CONTACT_MIN_SIZE && enemy.contact > 0) continue;
-      hit = touching[n];
+      const type = enemies[touching[n]].type;
+      if (type < BIG_ENEMY_MIN_TYPE) hit = touching[n];
     }
     if (hit < 0) continue;
 
-    const enemy = enemies[hit];
-    if (enemy.w >= BIG_CONTACT_MIN_SIZE) enemy.contact = 1 / BIG_CONTACT_RATE;
     damageEnemy(sim, hit, CONTACT_DAMAGE, x, y);
     if (!loseCat(sim, x, y)) return;
   }

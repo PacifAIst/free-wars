@@ -27,6 +27,7 @@ import type { Sfx } from '../game/Audio';
 import { cloneY, ringsFor, SLOT_X } from '../game/Clone';
 import {
   BIG_DRAW_SCALE,
+  BIG_ENEMY_MIN_TYPE,
   BIG_HEIGHT_SCALE,
   CAMERA_BACK,
   CAMERA_FOLLOW,
@@ -38,15 +39,20 @@ import {
   CLONE_EASE,
   CLONE_EASE_RING_LAG,
   COLS,
+  DROP_TANK,
   ENEMY_STATS,
   ENEMY_TYPE_COUNT,
   GATE_TYPE,
   GATE_WIDTH,
+  LASER_BEAM_SECONDS,
+  LASER_CHARGE_SECONDS,
+  LASER_WIDTH,
   MARCH_SPEED,
   MAX_RENDER_RESOLUTION,
   POOL_BULLETS,
   POOL_ENEMIES,
   POOL_POWERUPS,
+  POOL_ROCKETS,
   POWERUP_WIDTH,
   PREVIEW_ROWS,
   RAIL_LEFT_X,
@@ -56,17 +62,35 @@ import {
   SHOOTER_DRAW_SCALE,
   SHOOTER_Y,
   SIM_DT,
+  SMASH_INTERVAL,
+  TANK_BUBBLE_HP,
+  TANK_BUBBLE_SIZE,
+  TANK_SIZE,
   UNIT_DRAW_SCALE,
   VIEW_COLS,
   WINDOW_ROWS,
 } from '../game/constants';
-import { FX_BASE, FX_CAT, FX_GATE, FX_HIT, FX_KILL, FX_PICKUP } from '../game/Fx';
+import {
+  FX_BASE,
+  FX_BLAST,
+  FX_CAT,
+  FX_GATE,
+  FX_HIT,
+  FX_KILL,
+  FX_LASER,
+  FX_PICKUP,
+  FX_PUNCH,
+  FX_TANK,
+} from '../game/Fx';
 import type { GameView, RenderFrame } from '../game/Game';
 import { HUD } from '../game/HUD';
 import { getLayout } from '../game/layout';
+import { MENU_TRACK, type Music, musicTrackFor } from '../game/Music';
 import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../game/Player';
+import { BULLET_MINIGUN, ROCKET_TANK } from '../game/Projectile';
+import { LASER_CHARGING, LASER_FIRING, laserCharge, laserPhase } from '../game/Weapon';
 import { cellSpec } from '../parsers/tokens';
-import type { GameState, SimState } from '../types';
+import type { Enemy, GameState, SimState } from '../types';
 import { Batch } from './Batch';
 import {
   blobGeometry,
@@ -76,6 +100,8 @@ import {
   catGeometry,
   outlineMaterial,
   ratGeometry,
+  rocketGeometry,
+  tankGeometry,
   walkClock,
   walking,
 } from './models';
@@ -101,6 +127,10 @@ const SHOT_SECONDS = 0.09;
 const BIG_CAPACITY = 24;
 /** Width of the big-enemy model at scale 1, so a footprint of w cells is filled. */
 const BIG_MODEL_WIDTH = 1.22;
+/** Height of a big rat's HP bar above the lane, in model units: just over its ears. */
+const BAR_HEIGHT = 1.85;
+/** Seconds an arm stays out after its punch has landed. */
+const PUNCH_HOLD_SECONDS = 0.16;
 const LANE_FAR = -150;
 const LANE_NEAR = WINDOW_ROWS + 12;
 const SKY = 0x0d1029;
@@ -175,7 +205,11 @@ function labelTexture(text: string, background: string): CanvasTexture {
   g.lineWidth = 10;
   g.strokeStyle = 'rgba(255,255,255,0.6)';
   g.strokeRect(7, 7, 242, 114);
-  g.font = '900 84px "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
+  const family = '"Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
+  g.font = `900 84px ${family}`;
+  // A long word such as MINIGUN is set smaller, so it fits the label.
+  const wide = g.measureText(text).width;
+  if (wide > 208) g.font = `900 ${Math.floor((84 * 208) / wide)}px ${family}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
@@ -209,19 +243,47 @@ function ringTexture(): CanvasTexture {
   return texture;
 }
 
-/** Face colour, side colour and glow colour of the four clone rewards, then of a surprise. */
-const REWARD_COLORS: readonly [string, number, readonly [number, number, number]][] = [
-  ['#2fb85c', 0x1f8a43, [0.3, 1.0, 0.45]],
-  ['#1fa7b8', 0x157887, [0.25, 0.9, 1.0]],
-  ['#8a5cf0', 0x6238c4, [0.7, 0.5, 1.0]],
-  ['#f2a000', 0xbf7a00, [1.0, 0.75, 0.2]],
-  ['#e0448f', 0xa82566, [1.0, 0.4, 0.7]],
+/** Red beam of the laser: white hot in the middle, fading out to the sides. */
+function beamTexture(): CanvasTexture {
+  const [canvas, g] = canvas2d(64, 4);
+  const across = g.createLinearGradient(0, 0, 64, 0);
+  across.addColorStop(0, 'rgba(255,40,40,0)');
+  across.addColorStop(0.25, 'rgba(255,50,50,0.85)');
+  across.addColorStop(0.45, 'rgba(255,235,225,1)');
+  across.addColorStop(0.55, 'rgba(255,235,225,1)');
+  across.addColorStop(0.75, 'rgba(255,50,50,0.85)');
+  across.addColorStop(1, 'rgba(255,40,40,0)');
+  g.fillStyle = across;
+  g.fillRect(0, 0, 64, 4);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+interface Reward {
+  /** What the label says. */
+  text: string;
+  /** Colour of the label, as CSS, and of the sides. */
+  face: string;
+  side: number;
+  /** Colour of the light when it is collected. */
+  glow: readonly [number, number, number];
+}
+
+/** What a panel or a box carries, indexed by drop code (D9). Code 0 is a surprise, rolled when it is collected. */
+const REWARDS: readonly Reward[] = [
+  { text: '?', face: '#e0448f', side: 0xa82566, glow: [1.0, 0.4, 0.7] },
+  { text: `+${CLONE_BOX_AMOUNTS[0]}`, face: '#2fb85c', side: 0x1f8a43, glow: [0.3, 1.0, 0.45] },
+  { text: `+${CLONE_BOX_AMOUNTS[1]}`, face: '#1fa7b8', side: 0x157887, glow: [0.25, 0.9, 1.0] },
+  { text: `+${CLONE_BOX_AMOUNTS[2]}`, face: '#8a5cf0', side: 0x6238c4, glow: [0.7, 0.5, 1.0] },
+  { text: `+${CLONE_BOX_AMOUNTS[3]}`, face: '#f2a000', side: 0xbf7a00, glow: [1.0, 0.75, 0.2] },
+  { text: 'MINIGUN', face: '#f2701d', side: 0xb84f0e, glow: [1.0, 0.55, 0.2] },
+  { text: 'LASER', face: '#e5383b', side: 0xa81f22, glow: [1.0, 0.3, 0.3] },
+  { text: 'ROCKET', face: '#3b6cf0', side: 0x2448b0, glow: [0.4, 0.6, 1.0] },
+  { text: 'TANK', face: '#4f9a3a', side: 0x356d26, glow: [0.5, 1.0, 0.4] },
 ];
-const MYSTERY = 4;
-/** Which label a gate carries: its clone reward, or a question mark for anything else. */
-const gateLabel = (drop: number): number => (drop >= 1 && drop <= 4 ? drop - 1 : MYSTERY);
-/** Which colour set suits a reward of `clones` clones. */
-const rewardIndex = (clones: number): number => Math.max(0, CLONE_BOX_AMOUNTS.indexOf(clones));
+/** The entry of REWARDS for a drop code. */
+const rewardOf = (drop: number): number => (drop >= 1 && drop < REWARDS.length ? drop : 0);
 
 /**
  * The 3D view (decisions A20 and A29). A perspective camera looks down the lane
@@ -246,9 +308,20 @@ export class Renderer3D implements GameView {
   private readonly blobs: Batch;
   private readonly bulletCores: Batch;
   private readonly bulletGlows: Batch;
-  private readonly boxes: Batch[] = [];
+  /** Indexed by drop code. A surprise and the tank have no box: the tank falls in a bubble. */
+  private readonly boxes: (Batch | null)[] = [];
+  /** Indexed by drop code. */
   private readonly gates: Batch[] = [];
   private readonly heroRing: Mesh;
+  private readonly rockets: Batch;
+  private readonly tank: Batch;
+  private readonly bubbles: Batch;
+  private readonly bubbleTanks: Batch;
+  private readonly beam: Mesh;
+  /** HP bars placed so far this frame. */
+  private barCount = 0;
+  /** Seconds since the rockets last left a puff of smoke. */
+  private trail = 0;
 
   private width = 1;
   private height = 1;
@@ -274,6 +347,8 @@ export class Renderer3D implements GameView {
   private lastSim: SimState | null = null;
   private lastFxId = 0;
   private lastShots = 0;
+  private lastRockets = 0;
+  private lastLaserPhase = 0;
   private lastState: GameState = 'BOOT';
   private lastTime = 0;
   private shake = 0;
@@ -281,6 +356,7 @@ export class Renderer3D implements GameView {
   constructor(
     private readonly host: HTMLElement,
     private readonly sfx: Sfx,
+    private readonly music: Music,
   ) {
     const renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION));
@@ -324,6 +400,8 @@ export class Renderer3D implements GameView {
         big ? BIG_CAPACITY : POOL_ENEMIES + PREVIEW_ROWS * COLS + MAX_TOSSED,
         true,
         big ? (type === 8 ? metalLine : smoothLine) : crowdLine,
+        // Big rats punch: two numbers per instance pose their arms.
+        big ? 'punch' : '',
       );
       batch.mesh.castShadow = big;
       this.rats.push(batch);
@@ -352,7 +430,12 @@ export class Renderer3D implements GameView {
     this.scene.add(this.heroRing);
 
     // --- projectiles ---
-    this.bulletCores = new Batch(bulletGeometry(0.14, 1.5), new MeshBasicMaterial({ color: 0xfff7c9 }), POOL_BULLETS);
+    this.bulletCores = new Batch(
+      bulletGeometry(0.14, 1.5),
+      new MeshBasicMaterial({ color: 0xfff7c9 }),
+      POOL_BULLETS,
+      true,
+    );
     this.bulletGlows = new Batch(
       bulletGeometry(0.42, 2.8),
       new MeshBasicMaterial({
@@ -363,6 +446,7 @@ export class Renderer3D implements GameView {
         depthWrite: false,
       }),
       POOL_BULLETS,
+      true,
     );
     this.bulletGlows.mesh.renderOrder = 3;
     this.scene.add(this.bulletCores.mesh, this.bulletGlows.mesh);
@@ -372,22 +456,61 @@ export class Renderer3D implements GameView {
     // faces the camera. A box is the crate a fat rat drops.
     const panel = new BoxGeometry(GATE_WIDTH - 1.4, 6.0, 1.3).rotateX(-0.62).translate(0, 2.7, 0);
     const crate = new BoxGeometry(POWERUP_WIDTH - 2.4, 4.2, 5.0).translate(0, 2.5, 0);
-    REWARD_COLORS.forEach(([face, sideColor], i) => {
-      const side = new MeshLambertMaterial({ color: sideColor });
-      const text = i === MYSTERY ? '?' : `+${CLONE_BOX_AMOUNTS[i]}`;
-      const label = new MeshLambertMaterial({ map: labelTexture(text, face) });
+    REWARDS.forEach((reward, drop) => {
+      const side = new MeshLambertMaterial({ color: reward.side });
+      const label = new MeshLambertMaterial({ map: labelTexture(reward.text, reward.face) });
       // Box faces: +x, -x, +y, -y, +z, -z.
       const gate = new Batch(panel, [side, side, side, side, label, side], POOL_POWERUPS, true);
       gate.mesh.castShadow = true;
       this.gates.push(gate);
       this.scene.add(gate.mesh);
-      if (i === MYSTERY) return;
+      if (drop === 0 || drop === DROP_TANK) {
+        this.boxes.push(null);
+        return;
+      }
       // On a box the label shows on top and towards the camera.
       const box = new Batch(crate, [side, side, label, side, label, side], POOL_POWERUPS);
       box.mesh.castShadow = true;
       this.boxes.push(box);
       this.scene.add(box.mesh);
     });
+
+    // --- weapons ---
+    this.rockets = new Batch(rocketGeometry(), new MeshLambertMaterial({ vertexColors: true }), POOL_ROCKETS);
+    const tankMaterial = new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.25 });
+    this.tank = new Batch(tankGeometry(), tankMaterial, 1, false, outlineMaterial(1, 0, 0.012));
+    this.tank.mesh.castShadow = true;
+    // The tank waiting in its bubble, and the bubble round it.
+    this.bubbleTanks = new Batch(tankGeometry(), tankMaterial, POOL_POWERUPS);
+    this.bubbles = new Batch(
+      new SphereGeometry(0.5, 24, 16),
+      new MeshStandardMaterial({
+        color: 0xa8ecff,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.08,
+        metalness: 0,
+        depthWrite: false,
+      }),
+      POOL_POWERUPS,
+      true,
+    );
+    this.bubbles.mesh.renderOrder = 4;
+    // The laser beam lies just above the lane, from the muzzle to the top of the window.
+    this.beam = new Mesh(
+      new PlaneGeometry(LASER_WIDTH, 1).rotateX(-Math.PI / 2),
+      new MeshBasicMaterial({ map: beamTexture(), transparent: true, blending: AdditiveBlending, depthWrite: false }),
+    );
+    this.beam.renderOrder = 4;
+    this.beam.visible = false;
+    this.scene.add(
+      this.rockets.mesh,
+      this.tank.mesh,
+      this.tank.outline!,
+      this.bubbleTanks.mesh,
+      this.bubbles.mesh,
+      this.beam,
+    );
 
     this.scene.add(this.sparks.puff.mesh, this.sparks.glow.mesh);
 
@@ -607,6 +730,8 @@ export class Renderer3D implements GameView {
       this.lastSim = sim;
       this.lastFxId = 0;
       this.lastShots = 0;
+      this.lastRockets = 0;
+      this.lastLaserPhase = 0;
       this.cloneCount = 0;
       this.tossedCount = 0;
       this.lastCooldown.fill(0);
@@ -621,6 +746,9 @@ export class Renderer3D implements GameView {
     const jolt = this.shake * this.shake;
     this.camera.position.x = COLS / 2 + (x - COLS / 2) * CAMERA_FOLLOW + (Math.random() - 0.5) * jolt * 1.6;
     this.camera.position.y = CAMERA_HEIGHT + (Math.random() - 0.5) * jolt * 1.6;
+    // HP bars and floating numbers are placed with this frame's camera.
+    this.camera.updateMatrixWorld();
+    this.barCount = 0;
 
     this.blobs.begin();
     this.drawSwarm(frame, x, time, dt);
@@ -628,6 +756,8 @@ export class Renderer3D implements GameView {
     this.blobs.end();
     this.drawBullets(frame);
     this.drawBoxes(frame, time);
+    this.drawWeapons(frame, x, time, dt);
+    this.hud.endHpBars(this.barCount);
     this.sparks.update(dt);
 
     this.renderer.render(this.scene, this.camera);
@@ -643,12 +773,22 @@ export class Renderer3D implements GameView {
   /** Turns what happened in the simulation since the last frame into particles, numbers, shake and sound. */
   private react(frame: RenderFrame, time: number): void {
     const { sim, state } = frame;
-    const { sparks, sfx } = this;
+    const { sparks, sfx, music } = this;
 
     if (state !== this.lastState) {
       if (state === 'WIN') sfx.win();
       else if (state === 'LOSE') sfx.lose();
-      else if (state === 'PLAYING' || state === 'PAUSED' || state === 'LEVEL_SELECT') sfx.tap();
+      else if (state !== 'LOADING' && state !== 'BOOT') sfx.tap();
+      // The menus have their music and each level has its own. It pauses with the game
+      // and stops when the level ends.
+      if (state === 'PLAYING') {
+        if (this.lastState === 'PAUSED') music.resume();
+        else music.start(musicTrackFor(frame.map.id));
+      } else if (state === 'MENU' || state === 'LEVEL_SELECT') {
+        music.play(MENU_TRACK);
+      } else if (state !== 'LOADING') {
+        music.pause();
+      }
       this.lastState = state;
     }
 
@@ -656,6 +796,15 @@ export class Renderer3D implements GameView {
       // A big swarm fires softly, so the volley does not drown everything else.
       sfx.shot(1 / Math.sqrt(1 + sim.clones * 0.12));
       this.lastShots = sim.shots;
+    }
+    if (sim.rocketsFired > this.lastRockets) {
+      sfx.rocket();
+      this.lastRockets = sim.rocketsFired;
+    }
+    const phase = laserPhase(sim);
+    if (phase !== this.lastLaserPhase) {
+      if (phase === LASER_CHARGING) sfx.laserCharge(LASER_CHARGE_SECONDS);
+      this.lastLaserPhase = phase;
     }
 
     const { items, high } = sim.fx;
@@ -702,30 +851,80 @@ export class Renderer3D implements GameView {
           sfx.breach();
           break;
         case FX_CAT:
+          // A punch kills the cats nearest the fist. A survivor from an outer slot takes the
+          // dead cat's place: it starts from where it stood and runs in.
+          if (f.tag > 0 && f.size !== f.tag - 1) {
+            this.cloneX[f.tag - 1] = this.cloneX[f.size];
+            this.cloneZ[f.tag - 1] = this.cloneZ[f.size];
+          }
           sparks.burst(1, 6, x, 1.5, z, 5, 7, 0.45, 1.3, 2.6, 0.92, 0.95, 1.0, 8);
           sparks.burst(0, 5, x, 1.8, z, 9, 9, 0.32, 1.1, 0.15, 0.4, 0.7, 1.0, 22);
           this.shake = Math.max(this.shake, 0.3);
           sfx.catLost();
           break;
         case FX_PICKUP: {
-          const [face, , glow] = REWARD_COLORS[rewardIndex(f.size)];
-          sparks.burst(0, 22, x, 1.2, z, 7, 11, 0.7, 0.9, 0.15, glow[0], glow[1], glow[2], 8);
-          sparks.emit(0, x, 1.5, z, 0, 0, 0, 0.3, 3, 9, glow[0], glow[1], glow[2]);
-          this.popup(`+${f.size}`, x, z, face);
-          sfx.pickup(f.size);
+          const reward = REWARDS[rewardOf(f.tag)];
+          const [r, g, b] = reward.glow;
+          sparks.burst(0, 22, x, 1.2, z, 7, 11, 0.7, 0.9, 0.15, r, g, b, 8);
+          sparks.emit(0, x, 1.5, z, 0, 0, 0, 0.3, 3, 9, r, g, b);
+          // Clones show their number; a weapon shows its name.
+          this.popup(f.size > 0 ? `+${f.size}` : `${reward.text}!`, x, z, reward.face);
+          if (f.size > 0) sfx.pickup(f.size);
+          else sfx.weapon();
           break;
         }
         case FX_GATE: {
-          const [face, , glow] = REWARD_COLORS[rewardIndex(f.size)];
+          const reward = REWARDS[rewardOf(f.tag)];
+          const [r, g, b] = reward.glow;
           // The panel shatters: shards fly out, dust rises, and a flash marks the spot.
-          sparks.burst(0, 56, x, 3, z, 22, 22, 0.8, 1.9, 0.3, glow[0], glow[1], glow[2], 34);
+          sparks.burst(0, 56, x, 3, z, 22, 22, 0.8, 1.9, 0.3, r, g, b, 34);
           sparks.burst(1, 14, x, 2, z, 8, 8, 0.6, 2.2, 4.6, 0.8, 0.8, 0.9, 5);
-          sparks.emit(0, x, 3, z, 0, 0, 0, 0.34, 9, 26, glow[0], glow[1], glow[2]);
-          this.popup(`+${f.size}`, x, z, face);
+          sparks.emit(0, x, 3, z, 0, 0, 0, 0.34, 9, 26, r, g, b);
+          this.popup(f.size > 0 ? `+${f.size}` : `${reward.text}!`, x, z, reward.face);
           this.shake = Math.max(this.shake, 0.55);
-          sfx.gateBreak(f.size);
+          if (f.size > 0) sfx.gateBreak(f.size);
+          else sfx.weapon();
           break;
         }
+        case FX_PUNCH:
+          // The fist lands: a ring of dust, sparks, a flash, and the number of cats it cost.
+          sparks.burst(1, 22, x, 1, z, 20, 6, 0.6, 2.4, 6.5, 0.72, 0.7, 0.78, 4);
+          sparks.burst(0, 26, x, 2, z, 30, 16, 0.5, 1.6, 0.2, 1.0, 0.85, 0.5, 30);
+          sparks.emit(0, x, 3, z, 0, 0, 0, 0.28, 8, 30, 1.0, 0.9, 0.7);
+          this.popup(`-${f.size}`, x, z, '#ff5a5a');
+          this.shake = Math.max(this.shake, f.size >= 30 ? 1 : 0.8);
+          sfx.punch(f.size);
+          break;
+        case FX_BLAST: {
+          const big = f.tag === 1;
+          sparks.burst(0, big ? 34 : 14, x, 2, z, f.size * 1.6, 10, 0.45, 1.6, 0.2, 1.0, 0.62, 0.2, 18);
+          sparks.burst(1, big ? 12 : 5, x, 1.5, z, f.size * 0.7, 7, 0.7, 2, f.size * 0.6, 0.35, 0.33, 0.38, 3);
+          sparks.emit(0, x, 3, z, 0, 0, 0, 0.26, f.size * 0.5, f.size * 1.9, 1.0, 0.8, 0.45);
+          this.shake = Math.max(this.shake, big ? 0.7 : 0.35);
+          sfx.explosion(big);
+          break;
+        }
+        case FX_LASER:
+          this.shake = Math.max(this.shake, 0.5);
+          sfx.laserFire(LASER_BEAM_SECONDS);
+          break;
+        case FX_TANK:
+          if (f.tag === 1) {
+            sparks.burst(0, 40, x, 2, z, 22, 14, 0.6, 1.6, 0.2, 0.5, 1.0, 0.45, 12);
+            sparks.emit(0, x, 4, z, 0, 0, 0, 0.35, 8, 34, 0.6, 1.0, 0.5);
+            this.shake = Math.max(this.shake, 0.6);
+            sfx.tankStart();
+          } else {
+            sparks.burst(1, 26, x, 2, z, 12, 9, 0.8, 3, 8, 0.7, 0.75, 0.8, 3);
+            sfx.tankEnd();
+            // The swarm climbs out: every clone pops back into its place.
+            for (let slot = 0; slot < sim.clones; slot++) {
+              this.cloneX[slot] = sim.shooter.x;
+              this.cloneZ[slot] = SHOOTER_Y;
+              this.cloneBorn[slot] = time + slot * 0.004;
+            }
+          }
+          break;
         default:
           break;
       }
@@ -757,6 +956,29 @@ export class Renderer3D implements GameView {
   private drawSwarm(frame: RenderFrame, x: number, time: number, dt: number): void {
     const { sim } = frame;
     const playing = frame.state === 'PLAYING';
+
+    // In tank mode the swarm rides inside the tank and only the tank is drawn.
+    const riding = sim.tank > 0;
+    this.tank.begin();
+    this.heroRing.scale.setScalar(riding ? TANK_SIZE / (1.2 * SHOOTER_DRAW_SCALE) : 1);
+    if (riding) {
+      const recoil = playing ? this.shotOf(0, sim.tankCooldown, dt) : 0;
+      const rumble = playing ? 0.07 * Math.sin(time * 40) : 0;
+      this.tank.add(x, rumble, SHOOTER_Y + 0.6 * recoil, TANK_SIZE, TANK_SIZE, TANK_SIZE);
+      this.blobs.add(x, 0.02, SHOOTER_Y, TANK_SIZE * 1.3, 1, TANK_SIZE * 1.5);
+      if (recoil > 0) {
+        this.sparks.flash(x, 0.52 * TANK_SIZE, SHOOTER_Y - 0.9 * TANK_SIZE, 4 + 7 * recoil, recoil, 0.8 * recoil, 0.3 * recoil);
+      }
+    }
+    this.tank.end();
+    if (riding) {
+      this.heroRing.position.x = x;
+      this.hero.begin();
+      this.hero.end();
+      this.clones.begin();
+      this.clones.end();
+      return;
+    }
 
     // The shooter recoils with each shot.
     const s = SHOOTER_DRAW_SCALE;
@@ -830,7 +1052,7 @@ export class Renderer3D implements GameView {
         for (let side = 0; side < 2; side++) {
           const token = side === 0 ? layout.gateLeft[r] : layout.gateRight[r];
           if (token === 0) continue;
-          const gate = this.gates[gateLabel(cellSpec(map, map.cells[r * COLS + token - 1]).drop)];
+          const gate = this.gates[rewardOf(cellSpec(map, map.cells[r * COLS + token - 1]).drop)];
           gate.add(side === 0 ? RAIL_LEFT_X : RAIL_RIGHT_X, 0, front - gateDepth / 2, 1, 1, 1);
           gate.tint(0.62, 0.62, 0.7);
         }
@@ -859,7 +1081,7 @@ export class Renderer3D implements GameView {
       const ex = e.prevX + (e.x - e.prevX) * alpha;
       const ez = e.prevY + (e.y - e.prevY) * alpha;
       if (e.type === GATE_TYPE) {
-        const gate = this.gates[gateLabel(e.drop)];
+        const gate = this.gates[rewardOf(e.drop)];
         // A hit makes the panel jump and flash.
         const jump = e.flash > 0 ? 1.08 : 1;
         gate.add(ex, 0, ez, jump, jump, 1);
@@ -877,6 +1099,8 @@ export class Renderer3D implements GameView {
         const stomp = Math.sin(time * 5 + e.row);
         const size = (e.w * BIG_DRAW_SCALE) / BIG_MODEL_WIDTH;
         batch.add(ex, 0, ez, size * (1 + 0.02 * stomp), size * BIG_HEIGHT_SCALE * (1 - 0.03 * stomp), size);
+        this.punchPose(e, batch);
+        if (ez + e.h / 2 > 0) this.enemyBar(e, ex, ez, size * BIG_HEIGHT_SCALE * BAR_HEIGHT);
       }
       if (e.flash > 0) batch.tint(1.9, 0.75, 0.75);
     }
@@ -910,6 +1134,107 @@ export class Renderer3D implements GameView {
     for (const gate of this.gates) gate.end();
   }
 
+  /**
+   * Poses the arms of the big rat added last. While it winds up, the arm whose
+   * turn it is goes back, holds, and is thrown forward as the punch lands; the
+   * arm that has just landed stays out for a moment.
+   */
+  private punchPose(e: Enemy, batch: Batch): void {
+    if (e.type < BIG_ENEMY_MIN_TYPE) return;
+    let wind = 0;
+    if (e.winding) {
+      const t = 1 - Math.max(0, e.contact) / SMASH_INTERVAL;
+      wind = t < 0.7 ? -0.6 * Math.sin((t / 0.7) * (Math.PI / 2)) : -0.6 + 1.6 * ((t - 0.7) / 0.3) ** 2;
+    }
+    const landed = e.punches > 0 ? Math.max(0, 1 - e.swing / PUNCH_HOLD_SECONDS) : 0;
+    // The arms take turns: x poses the left arm, y the right.
+    if (e.punches % 2 === 0) batch.setAux(landed, wind);
+    else batch.setAux(wind, landed);
+  }
+
+  /** Places an HP bar over a point `height` above the lane. Returns its screen position through `probe`. */
+  private placeBar(x: number, height: number, z: number, width: number, ratio: number, text: string): void {
+    const p = this.probe.set(x, height, z).project(this.camera);
+    if (p.z > 1 || Math.abs(p.x) > 1.15 || Math.abs(p.y) > 1.15) return;
+    const sx = ((p.x + 1) / 2) * this.width;
+    const sy = ((1 - p.y) / 2) * this.height;
+    if (this.hud.hpBar(this.barCount, sx, sy, width, Math.min(1, Math.max(0, ratio)), text)) this.barCount++;
+  }
+
+  /** Every big rat carries an HP bar over its head, with the HP left counting down on it (SPEC 7.1, A33). */
+  private enemyBar(e: Enemy, x: number, z: number, height: number): void {
+    const width = Math.max(56, e.w * this.pxPerGu * (ENEMY_STATS[e.type].boss ? 0.45 : 0.75));
+    this.placeBar(x, height, z, width, e.hp / e.maxHp, String(Math.ceil(e.hp)));
+  }
+
+  /** Rockets with their smoke, the laser, and the tank waiting in its bubble. */
+  private drawWeapons(frame: RenderFrame, x: number, time: number, dt: number): void {
+    const { sim, alpha } = frame;
+    const playing = frame.state === 'PLAYING';
+    // Smoke and sparks are left behind sixty times a second, whatever the frame rate.
+    this.trail += dt;
+    const puff = playing && this.trail >= 1 / 60;
+    if (puff) this.trail = 0;
+    const { sparks } = this;
+
+    this.rockets.begin();
+    const rockets = sim.rockets;
+    for (let i = 0; i < rockets.high; i++) {
+      const r = rockets.items[i];
+      if (!r.active) continue;
+      const z = r.prevY + (r.y - r.prevY) * alpha;
+      const big = r.kind === ROCKET_TANK;
+      const size = big ? 6 : 3.2;
+      const y = BULLET_HEIGHT + (big ? 2.5 : 0.4);
+      this.rockets.add(r.x, y, z, size, size, size);
+      sparks.flash(r.x, y, z + size * 0.55, size * 0.9, 1, 0.62, 0.2);
+      if (puff) {
+        sparks.emit(1, r.x, y, z + size * 0.6, (Math.random() - 0.5) * 3, 1 + Math.random() * 2, 8, 0.32, size * 0.3, size * 0.8, 0.82, 0.82, 0.88);
+      }
+    }
+    this.rockets.end();
+
+    // The laser: a thin line that thickens while it charges, then the full beam.
+    const phase = laserPhase(sim);
+    const { beam } = this;
+    if (phase === LASER_CHARGING || phase === LASER_FIRING) {
+      const firing = phase === LASER_FIRING;
+      const charge = laserCharge(sim);
+      const length = SHOOTER_Y - 2;
+      const y = BULLET_HEIGHT + 0.6;
+      beam.visible = true;
+      beam.position.set(x, y, length / 2);
+      beam.scale.set(firing ? 1 + 0.08 * Math.sin(time * 90) : 0.04 + 0.1 * charge, 1, length);
+      (beam.material as MeshBasicMaterial).opacity = firing ? 0.95 : 0.25 + 0.5 * charge;
+      sparks.flash(x, y + 0.5, SHOOTER_Y - 2.5, firing ? 17 : 3 + 9 * charge, 1, 0.25, 0.2);
+      if (firing && puff) {
+        for (let n = 0; n < 3; n++) {
+          sparks.emit(0, x + (Math.random() - 0.5) * LASER_WIDTH, y, Math.random() * length, (Math.random() - 0.5) * 9, 5, 0, 0.25, 1.5, 0.2, 1, 0.42, 0.32);
+        }
+      }
+    } else {
+      beam.visible = false;
+    }
+
+    // Tank bubbles: the tank floats inside, and a thin bar shows how many shots are left.
+    this.bubbles.begin();
+    this.bubbleTanks.begin();
+    const boxes = sim.powerups;
+    const d = TANK_BUBBLE_SIZE;
+    for (let i = 0; i < boxes.high; i++) {
+      const p = boxes.items[i];
+      if (!p.active || p.kind !== DROP_TANK) continue;
+      const z = p.prevY + (p.y - p.prevY) * alpha;
+      const bob = 0.4 * Math.sin(time * 3 + i);
+      this.bubbleTanks.add(p.x, d * 0.22 + bob, z, d * 0.6, d * 0.6, d * 0.6);
+      this.bubbles.add(p.x, d * 0.55 + bob, z, d * 1.1, d * 1.1, d * 1.1);
+      if (p.flash > 0) this.bubbles.tint(2.4, 2.4, 2.4);
+      this.placeBar(p.x, d * 1.3, z, 46, p.hp / TANK_BUBBLE_HP, '');
+    }
+    this.bubbles.end();
+    this.bubbleTanks.end();
+  }
+
   private drawBullets(frame: RenderFrame): void {
     const { items, high } = frame.sim.bullets;
     this.bulletCores.begin();
@@ -921,6 +1246,11 @@ export class Renderer3D implements GameView {
       this.bulletCores.add(b.x, BULLET_HEIGHT, z, 1, 1, 1);
       // The glow trails behind the bullet.
       this.bulletGlows.add(b.x, BULLET_HEIGHT, z + 0.75, 1, 1, 1);
+      if (b.kind === BULLET_MINIGUN) {
+        // SPEC 8: minigun bullets are orange.
+        this.bulletCores.tint(1, 0.62, 0.3);
+        this.bulletGlows.tint(1, 0.45, 0.25);
+      }
     }
     this.bulletCores.end();
     this.bulletGlows.end();
@@ -928,16 +1258,16 @@ export class Renderer3D implements GameView {
 
   private drawBoxes(frame: RenderFrame, time: number): void {
     const { items, high } = frame.sim.powerups;
-    for (const batch of this.boxes) batch.begin();
+    for (const batch of this.boxes) batch?.begin();
     for (let i = 0; i < high; i++) {
       const p = items[i];
       if (!p.active) continue;
-      const batch = this.boxes[p.kind - 1];
+      const batch = this.boxes[p.kind];
       if (!batch) continue;
       const z = p.prevY + (p.y - p.prevY) * frame.alpha;
       const pulse = 1 + 0.06 * Math.sin(time * 6 + i);
       batch.add(p.x, 0.25 + 0.2 * Math.sin(time * 4 + i), z, pulse, pulse, pulse);
     }
-    for (const batch of this.boxes) batch.end();
+    for (const batch of this.boxes) batch?.end();
   }
 }

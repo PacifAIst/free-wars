@@ -1,5 +1,5 @@
 import type { GameState, MapData, SimInput, SimState } from '../types';
-import { MAX_FRAME_DELTA_MS, SIM_DT } from './constants';
+import { BUILT_IN_LEVELS, MAX_FRAME_DELTA_MS, SIM_DT } from './constants';
 import type { InputSource } from './Input';
 import type { MapSource } from './maps';
 import { createScratch, createSim, type SimScratch, stepSim } from './Sim';
@@ -26,9 +26,29 @@ export interface GameView {
   render(frame: RenderFrame): void;
 }
 
+/** How far the player has got through the built-in maps. The real one saves to the browser. */
+export interface Progress {
+  /** Highest built-in map that may be played. */
+  unlocked(): number;
+  /** Map `level` has been won: the next one opens. */
+  complete(level: number): void;
+}
+
+/** Progress that lasts as long as the page: for tests, and for a game with no storage. */
+export function memoryProgress(start = 1): Progress {
+  let unlocked = start;
+  return {
+    unlocked: () => unlocked,
+    complete: (level) => {
+      unlocked = Math.max(unlocked, Math.min(BUILT_IN_LEVELS, level + 1));
+    },
+  };
+}
+
 export interface GameOptions {
-  /** Map to play first. */
+  /** Skip the map grid and play this map: the dev map, or a map under test. */
   levelId?: string;
+  progress?: Progress;
   /** Source of run seeds. Fixed in tests; random in the real game. */
   nextSeed?: () => number;
 }
@@ -40,9 +60,9 @@ export const TRANSITIONS: Readonly<Record<GameState, readonly GameState[]>> = {
   LEVEL_SELECT: ['LOADING', 'MENU'],
   LOADING: ['PLAYING', 'LEVEL_SELECT'],
   PLAYING: ['PAUSED', 'WIN', 'LOSE'],
-  PAUSED: ['PLAYING', 'LEVEL_SELECT'],
-  WIN: ['LEVEL_SELECT'],
-  LOSE: ['LEVEL_SELECT'],
+  PAUSED: ['PLAYING', 'MENU'],
+  WIN: ['LEVEL_SELECT', 'MENU'],
+  LOSE: ['LOADING', 'MENU'],
 };
 
 const SIM_DT_MS = SIM_DT * 1000;
@@ -62,6 +82,9 @@ export class Game {
 
   private readonly scratch: SimScratch = createScratch();
   private readonly nextSeed: () => number;
+  private readonly progress: Progress;
+  /** Set when the game was started on one given map: the map grid is skipped. */
+  private readonly directLevel: string | null;
   private accumulatorMs = 0;
   private lastMs = -1;
   private readonly stepInput: SimInput = { targetDelta: 0, keyDir: 0 };
@@ -85,6 +108,8 @@ export class Game {
     options: GameOptions = {},
   ) {
     this.levelId = options.levelId ?? DEFAULT_LEVEL;
+    this.directLevel = options.levelId ?? null;
+    this.progress = options.progress ?? memoryProgress();
     this.nextSeed = options.nextSeed ?? (() => (Math.random() * 0x100000000) >>> 0);
   }
 
@@ -99,6 +124,58 @@ export class Game {
   /** Called when assets are loaded: BOOT -> MENU. */
   ready(): void {
     this.transition('MENU');
+  }
+
+  // --- What the screens ask for (decision A34). Each does nothing in the wrong state. ---
+
+  /** The PLAY button: on to the map grid, or straight into the map the game was started on. */
+  play(): void {
+    if (this.state !== 'MENU') return;
+    this.notice = '';
+    this.transition('LEVEL_SELECT');
+    if (this.directLevel !== null) this.load(this.directLevel);
+  }
+
+  /** True when `id` may be played: a built-in map up to the one the player has reached, or any other map. */
+  isUnlocked(id: string): boolean {
+    if (!/^[1-9]\d*$/.test(id)) return true;
+    const n = Number(id);
+    return n > BUILT_IN_LEVELS || n <= this.progress.unlocked();
+  }
+
+  /** A map is picked on the grid. A locked map is refused. */
+  chooseLevel(id: string): void {
+    if (this.state !== 'LEVEL_SELECT' || !this.isUnlocked(id)) return;
+    this.load(id);
+  }
+
+  private load(id: string): void {
+    this.levelId = id;
+    this.loadStarted = false;
+    this.transition('LOADING');
+  }
+
+  resume(): void {
+    if (this.state === 'PAUSED') this.transition('PLAYING');
+  }
+
+  /** After a defeat: the same map again. */
+  retry(): void {
+    if (this.state !== 'LOSE') return;
+    this.loadStarted = false;
+    this.transition('LOADING');
+  }
+
+  /** After a victory: back to the map grid, where the next map is now open. */
+  continueAfterWin(): void {
+    if (this.state !== 'WIN') return;
+    if (this.directLevel !== null) this.transition('MENU');
+    else this.transition('LEVEL_SELECT');
+  }
+
+  /** Back to the splash screen from the map grid, a pause or the end of a level. */
+  toMenu(): void {
+    if (TRANSITIONS[this.state].includes('MENU')) this.transition('MENU');
   }
 
   /** Pauses play, e.g. when the tab is hidden or the Android back button is pressed. */
@@ -125,16 +202,13 @@ export class Game {
       case 'BOOT':
         break;
       case 'MENU':
+        // The screens drive the menus with their buttons; Enter or Space stands for the main one.
         this.input.takePause();
-        if (this.input.takeTap()) {
-          this.notice = '';
-          this.transition('LEVEL_SELECT');
-        }
+        if (this.input.takeTap()) this.play();
         break;
       case 'LEVEL_SELECT':
-        // The level select screen arrives in M8; until then go straight in.
-        this.loadStarted = false;
-        this.transition('LOADING');
+        this.input.takePause();
+        this.input.takeTap();
         break;
       case 'LOADING':
         this.updateLoading();
@@ -146,20 +220,23 @@ export class Game {
           break;
         }
         this.advance(delta);
-        if (this.sim.phase === 'won') this.transition('WIN');
+        if (this.sim.phase === 'won') {
+          if (/^[1-9]\d*$/.test(this.levelId)) this.progress.complete(Number(this.levelId));
+          this.transition('WIN');
+        }
         else if (this.sim.phase === 'lost') this.transition('LOSE');
         break;
       case 'PAUSED':
         // Input made while paused must not move the map on resume.
         this.input.consumeTargetDelta(this.view.cellPx());
-        if (this.input.takeTap() || this.input.takePause()) this.transition('PLAYING');
+        if (this.input.takeTap() || this.input.takePause()) this.resume();
         break;
       case 'WIN':
       case 'LOSE':
         this.input.takePause();
         if (this.input.takeTap()) {
-          if (this.state === 'WIN') this.selectNextLevel();
-          this.transition('LEVEL_SELECT');
+          if (this.state === 'WIN') this.continueAfterWin();
+          else this.retry();
         }
         break;
     }
@@ -195,6 +272,8 @@ export class Game {
       this.notice = this.loadError;
       this.transition('LEVEL_SELECT');
       this.transition('MENU');
+      // Drop the tap that asked for the map, so it does not ask again.
+      this.input.takeTap();
       return;
     }
     if (this.loadedMap === null) return;
@@ -207,13 +286,6 @@ export class Game {
     this.input.consumeTargetDelta(this.view.cellPx());
     this.input.takeTap();
     this.transition('PLAYING');
-  }
-
-  /** After a win, moves on to the next numbered level if there is one. */
-  private selectNextLevel(): void {
-    if (!/^\d+$/.test(this.levelId)) return;
-    const next = String(Number(this.levelId) + 1);
-    if (this.maps.has(next)) this.levelId = next;
   }
 
   private advance(deltaMs: number): void {
