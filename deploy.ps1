@@ -10,8 +10,8 @@ git pull
 if ($LASTEXITCODE -ne 0) { Write-Host 'git pull failed.' -ForegroundColor Red; exit 1 }
 
 Write-Host 'Installing packages...' -ForegroundColor Cyan
-npm ci
-if ($LASTEXITCODE -ne 0) { Write-Host 'npm ci failed.' -ForegroundColor Red; exit 1 }
+npm install --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) { Write-Host 'npm install failed. Close any running "npm run dev" window and try again.' -ForegroundColor Red; exit 1 }
 
 Write-Host 'Building...' -ForegroundColor Cyan
 npm run build
