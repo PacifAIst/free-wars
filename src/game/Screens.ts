@@ -15,6 +15,27 @@ const GRID_COLUMNS = 11;
 /** A panel ignores presses for this long after it appears, so a finger still dragging does not hit a button. */
 const ARM_MS = 350;
 
+/** What the RULES pop-up says, one line each. */
+const RULES: readonly string[] = [
+  'Drag left or right to move your cats. They shoot on their own.',
+  'You start with one cat. Step onto a rail and let a panel reach you: more cats, or a weapon.',
+  'Do not touch a bomb: it kills 18 of your cats.',
+  'A rat that touches a cat kills it. Big rats punch, and some fire rockets: shoot the rockets down.',
+  'Fat rats drop a box when they die. Catch it. A tank comes in a bubble: shoot it open.',
+  'The first rat to cross the gold line loses the map. So does losing every cat.',
+  'Kill every rat to win the map and open the next one. Maps 11, 22, 33 and 44 have a boss.',
+  'Keys: arrows or A and D move, P or Escape pauses, M mutes.',
+];
+
+/** What the ABOUT pop-up says. The last line is followed by a link to the repository. */
+const ABOUT: readonly string[] = [
+  `FREE WARS ${__APP_VERSION__}`,
+  'A free and open-source game. Licence: AGPL-3.0.',
+  'Make your own maps in the map editor, or take the code and make your own game.',
+  'Music from Pixabay and Unminus. Drawn with three.js; every model and sound effect is made in code.',
+  'By PacifAIst.',
+];
+
 const LOSS_TEXT: Record<string, string> = {
   base: 'A rat crossed the goal line',
   boss: 'A boss crossed the goal line',
@@ -44,6 +65,9 @@ export class Screens {
   private readonly notice: HTMLDivElement;
   private readonly lossReason: HTMLDivElement;
   private readonly clearButton: HTMLButtonElement;
+  private readonly popup: HTMLDivElement;
+  private readonly popupTitle: HTMLDivElement;
+  private readonly popupBody: HTMLDivElement;
   private shown: PanelName = 'none';
   private shownAt = 0;
   private clearArmedAt = 0;
@@ -74,6 +98,9 @@ export class Screens {
     const row = make('div', 'ui-row', splash);
     this.button(row, 'MAP EDITOR', 'ui-button ui-small', () => this.onEditor());
     this.clearButton = this.button(row, 'CLEAR PROGRESS', 'ui-button ui-small ui-danger', () => this.clearProgress());
+    const more = make('div', 'ui-row', splash);
+    this.button(more, 'RULES', 'ui-button ui-small', () => this.showPopup('RULES', RULES, false));
+    this.button(more, 'ABOUT', 'ui-button ui-small', () => this.showPopup('ABOUT', ABOUT, true));
     this.notice = make('div', 'ui-notice', splash);
 
     // --- Map grid ---
@@ -112,6 +139,22 @@ export class Screens {
     make('div', 'ui-logo', final, 'YOU WON!');
     make('div', 'ui-text ui-big', final, 'Thanks for playing!!!');
     this.button(final, 'MAIN MENU', 'ui-button ui-primary', () => this.game.toMenu());
+
+    // --- Pop-up for the rules and the about text: a card over the splash screen ---
+    this.popup = make('div', 'ui-popup', root);
+    const card = make('div', 'ui-card', this.popup);
+    this.popupTitle = make('div', 'ui-title ui-card-title', card);
+    this.popupBody = make('div', 'ui-card-body', card);
+    const close = make('button', 'ui-button ui-small', card, 'CLOSE');
+    close.type = 'button';
+    close.addEventListener('click', () => this.hidePopup());
+    // A press beside the card, or Escape, closes it too.
+    this.popup.addEventListener('click', (e) => {
+      if (e.target === this.popup) this.hidePopup();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape') this.hidePopup();
+    });
 
     this.panels = { splash, levels, pause, lose, win, final };
     this.applyVolumes();
@@ -157,6 +200,27 @@ export class Screens {
     this.sfx.setVolume(this.save.sfx);
     for (const input of this.musicSliders) input.value = String(Math.round(this.save.music * 100));
     for (const input of this.sfxSliders) input.value = String(Math.round(this.save.sfx * 100));
+  }
+
+  private showPopup(title: string, lines: readonly string[], withLink: boolean): void {
+    this.popupTitle.textContent = title;
+    this.popupBody.replaceChildren();
+    for (const line of lines) make('p', 'ui-card-line', this.popupBody, line);
+    if (withLink) {
+      const link = make('a', 'ui-link', make('p', 'ui-card-line', this.popupBody), REPOSITORY.replace('https://', ''));
+      link.href = REPOSITORY;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
+    this.popup.classList.add('ui-show');
+    // While it is up, Enter and Space are not for the PLAY button.
+    this.game.menuBusy = true;
+  }
+
+  private hidePopup(): void {
+    if (!this.popup.classList.contains('ui-show')) return;
+    this.popup.classList.remove('ui-show');
+    this.game.menuBusy = false;
   }
 
   /** Shows a line of text on the splash screen. */

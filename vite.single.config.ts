@@ -20,6 +20,7 @@ function singleFileExtras(): Plugin {
 
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev') },
   publicDir: false,
   plugins: [viteSingleFile({ removeViteModuleLoader: true }), singleFileExtras(), musicFolder(here('.'), 'dist-single')],
   build: {

@@ -8,7 +8,7 @@ Last updated: 2026-11-13, after the owner's seventh review (map editor, bomb, en
 ## Where things stand
 
 The owner compares each build with a reference video and changes rules as he goes. Every change
-is recorded in `DESIGN_DECISIONS.md` section 3 (A18 to A35), which overrides the plan where they
+is recorded in `DESIGN_DECISIONS.md` section 3 (A18 to A36), which overrides the plan where they
 disagree.
 
 - **3D look (A20, A32):** three.js, models built from code, walk cycle in the vertex shader, dark
@@ -35,6 +35,8 @@ disagree.
 - **Bomb (A35):** a rail item that kills the 18 cats nearest it when touched.
 - **Item pictures (A35):** panels and boxes carry pictures, drawn from code in one style.
 - **Map editor (A35):** visual editor with templates, `.fw` save, upload, link and test play.
+- **Rules, About, credit line (A36):** two pop-ups on the splash screen, and a line along the
+  bottom of every screen with the licence and a link to the repository.
 - **Screens (A34):** splash menu with volume sliders, clear progress and PLAY; grid of 44 maps
   with locks; pause, defeat and victory panels; a final screen after map 44. Progress and
   volumes are saved in the browser.

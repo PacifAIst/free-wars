@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 // root, a subfolder or a WebView. No server features are assumed.
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev') },
   plugins: [musicFolder(root, 'dist')],
   build: {
     outDir: 'dist',
