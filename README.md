@@ -119,23 +119,6 @@ Anything you save in `src/` or `public/maps/` shows up in the page straight away
 
 To get the latest version later: `git pull`, then `npm ci`, then `npm run dev` again.
 
-## Run it on your computer
-
-You need [Git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org/) 20 or newer (22 recommended).
-In a terminal:
-
-```
-git clone https://github.com/PacifAIst/free-wars.git
-cd free-wars
-npm ci
-npm run dev
-```
-
-Then open http://localhost:5173/ in your browser. Keep the terminal open while you play; Ctrl+C stops it.
-Anything you save in `src/` or `public/maps/` shows up in the page straight away.
-
-To get the latest version later: `git pull`, then `npm ci`, then `npm run dev` again.
-
 ## Develop
 
 ```
