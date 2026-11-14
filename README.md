@@ -13,7 +13,6 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 <p align="center">
   <img src="images/menu.png" width="230" alt="Main menu">
   <img src="images/map-grid.png" width="230" alt="Map grid">
-  <img src="images/wall.png" width="230" alt="A brick wall holding panels">
   <img src="images/rockets.png" width="230" alt="Rocket mode">
 </p>
 <p align="center">
