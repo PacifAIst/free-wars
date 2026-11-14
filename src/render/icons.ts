@@ -222,6 +222,30 @@ export function drawItem(g: G, drop: number, cx: number, cy: number, width: numb
   g.restore();
 }
 
+/** A wall of bricks, for the 3D wall and for the map editor. */
+export function brickCanvas(width: number, height: number, courses = 4): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const g = canvas.getContext('2d') as G;
+  g.fillStyle = '#4a2a25';
+  g.fillRect(0, 0, width, height);
+  const h = height / courses;
+  const w = h * 2.1;
+  const gap = Math.max(1, h * 0.09);
+  const shades = ['#c8603f', '#b9553a', '#d06f48', '#a94c36'];
+  for (let row = 0; row < courses; row++) {
+    for (let i = -1; i * w < width; i++) {
+      const x = i * w + (row % 2) * (w / 2);
+      g.fillStyle = shades[(i * 7 + row * 3 + 40) % shades.length];
+      g.fillRect(x + gap, row * h + gap, w - gap * 2, h - gap * 2);
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.fillRect(x + gap, row * h + gap, w - gap * 2, Math.max(1, h * 0.14));
+    }
+  }
+  return canvas;
+}
+
 /** The label of an item: its colour, a pale frame, and its picture. */
 export function itemCanvas(drop: number, width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');

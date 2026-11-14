@@ -9,6 +9,7 @@ import {
   LASER_CHARGE_SECONDS,
   LASER_COOLDOWN_SECONDS,
   LASER_WIDTH,
+  RAIL_WIDTH,
   SHOOTER_Y,
   SIM_DT,
   TANK_BUBBLE_HP,
@@ -22,6 +23,7 @@ import { damageEnemy } from './Enemy';
 import { FX_BLAST, FX_LASER, FX_TANK, spawnFx } from './Fx';
 import { damageBubble } from './Powerup';
 import { ROCKET_ENEMY, ROCKET_TANK, spawnRocket } from './Projectile';
+import { damageWall, wallX } from './Wall';
 import { poolFree } from './Pool';
 
 // The timed weapons of SPEC 8.1. The minigun and rocket mode only change what
@@ -77,6 +79,14 @@ function stepLaser(sim: SimState): void {
       } else if (e.cast !== sim.laserCasts) {
         e.cast = sim.laserCasts;
         damageEnemy(sim, i, LASER_BIG_DMG, e.x, e.y + e.h / 2);
+      }
+    }
+    // A wall in the beam is hurt once per cast, like a big rat.
+    for (let side = 0; side < 2; side++) {
+      const wall = sim.walls[side];
+      if (wall.hp > 0 && wall.cast !== sim.laserCasts && Math.abs(x - wallX(side)) < half + RAIL_WIDTH / 2) {
+        wall.cast = sim.laserCasts;
+        damageWall(sim, side, LASER_BIG_DMG, wallX(side));
       }
     }
     // B5: the beam also burns up the enemy rockets in it.

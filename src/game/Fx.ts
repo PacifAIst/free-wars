@@ -28,6 +28,8 @@ export const FX_LASER = 8;
 export const FX_TANK = 9;
 /** A bomb went off. `size` is the number of units it killed. */
 export const FX_BOMB = 10;
+/** A brick wall broke. `tag` is its side: 0 left, 1 right. */
+export const FX_WALL = 11;
 
 const LIFE: readonly number[] = [
   HIT_FLASH_SECONDS * 2,
@@ -36,6 +38,7 @@ const LIFE: readonly number[] = [
   FX_PUFF_SECONDS,
   FX_PICKUP_SECONDS,
   FX_PICKUP_SECONDS,
+  FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,
   FX_PUFF_SECONDS,

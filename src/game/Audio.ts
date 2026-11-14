@@ -42,6 +42,7 @@ const MIN_GAP: Record<string, number> = {
   gateHit: 0.05,
   cat: 0.06,
   rocket: 0.08,
+  minigun: 0.05,
   blast: 0.06,
   punch: 0.1,
 };
@@ -270,6 +271,29 @@ export class Sfx {
       this.tone({ wave: 'square', from: f, to: f, length: 0.12, gain: 0.07, delay: i * 0.045 });
       this.tone({ wave: 'triangle', from: f * 2, to: f * 2, length: 0.16, gain: 0.1, delay: i * 0.045 });
     });
+  }
+
+  /** The minigun: a heavy, low hammering with a metallic crack on each round. */
+  minigun(volume = 1): void {
+    if (!this.ready('minigun')) return;
+    const v = this.vary(0.06);
+    this.tone({ wave: 'square', from: 170, to: 55, length: 0.07, gain: 0.2 * volume }, v);
+    this.tone({ wave: 'sawtooth', from: 85, to: 40, length: 0.09, gain: 0.16 * volume }, v);
+    this.noise({ length: 0.06, gain: 0.2 * volume, filter: 'bandpass', from: 2200, to: 600, q: 0.8 });
+    this.noise({ length: 0.02, gain: 0.1 * volume, filter: 'highpass', from: 6000, to: 4000 });
+  }
+
+  /** A brick wall comes down: a crack, a long rumble, and bricks landing. */
+  wallBreak(): void {
+    if (!this.ready('wall')) return;
+    this.noise({ length: 0.08, gain: 0.3, filter: 'highpass', from: 2500, to: 5000 });
+    this.noise({ length: 0.9, gain: 0.4, filter: 'lowpass', from: 1800, to: 90 });
+    this.tone({ wave: 'sine', from: 120, to: 30, length: 0.6, gain: 0.45 });
+    for (let i = 0; i < 6; i++) {
+      const delay = 0.12 + i * 0.09 + Math.random() * 0.05;
+      this.tone({ wave: 'triangle', from: 220 - i * 20, to: 70, length: 0.07, gain: 0.14, delay }, this.vary(0.2));
+      this.noise({ length: 0.05, gain: 0.1, filter: 'bandpass', from: 900, to: 400, q: 1.5, delay });
+    }
   }
 
   /** A rocket leaves its tube. */

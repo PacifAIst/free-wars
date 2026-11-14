@@ -8,7 +8,7 @@
 // or from one of the 44 built-in maps. Files are read in the browser and go
 // nowhere. Styles live in index.html.
 
-import { BUILT_IN_LEVELS, COLS } from '../game/constants';
+import { BUILT_IN_LEVELS, COLS, WALL_DEFAULT_HP, WALL_MAX_HP } from '../game/constants';
 import {
   emptyFwMap,
   enemySize,
@@ -26,12 +26,14 @@ import {
 } from '../game/fw';
 import type { Game } from '../game/Game';
 import type { MapSource } from '../game/maps';
-import { ITEMS, itemCanvas } from '../render/icons';
+import { brickCanvas, ITEMS, itemCanvas } from '../render/icons';
 
-type Tool = { kind: 'erase' } | { kind: 'enemy'; type: number } | { kind: 'item'; drop: number };
+type Tool = { kind: 'erase' } | { kind: 'enemy'; type: number } | { kind: 'item'; drop: number } | { kind: 'wall' };
 
 /** A place on the grid: a row, and either a rail (`side` 0 or 1) or a lane column (`side` -1). */
 interface Spot {
+  /** True when the pointer is on the strip at the top of the grid where a rail's wall is shown. */
+  top: boolean;
   side: number;
   col: number;
   row: number;
@@ -127,6 +129,9 @@ export class Editor {
   private readonly spacer: HTMLDivElement;
   private readonly g: CanvasRenderingContext2D;
   private readonly toolButtons: HTMLButtonElement[] = [];
+  private readonly darkBox: HTMLInputElement;
+  private readonly wallHpInput: HTMLInputElement;
+  private readonly brickPicture = brickCanvas(160, 60, 3);
   private readonly itemPictures: HTMLCanvasElement[] = ITEMS.map((_, drop) => itemCanvas(drop, 128, 64));
 
   private map: FwMap = emptyFwMap();
@@ -184,6 +189,30 @@ export class Editor {
     this.button(bar, 'UPLOAD .FW', () => file.click());
     this.button(bar, 'LINK', () => this.loadLink());
     this.button(bar, 'NEW', () => this.load(emptyFwMap(), 'New map.'));
+
+    // A night map: on by default for the boss maps.
+    const darkLabel = make('label', 'ed-check', bar);
+    this.darkBox = make('input', '', darkLabel);
+    this.darkBox.type = 'checkbox';
+    darkLabel.append(' DARK MAP');
+    this.darkBox.addEventListener('change', () => {
+      this.map.dark = this.darkBox.checked;
+      this.saveDraft();
+    });
+    // HP of the brick walls: of the next one placed, and of those already there.
+    const hpLabel = make('label', 'ed-check', bar, 'WALL HP ');
+    this.wallHpInput = make('input', 'ed-number', hpLabel);
+    this.wallHpInput.type = 'number';
+    this.wallHpInput.min = '1';
+    this.wallHpInput.max = String(WALL_MAX_HP);
+    this.wallHpInput.value = String(WALL_DEFAULT_HP);
+    this.wallHpInput.addEventListener('change', () => {
+      const hp = this.wallHp();
+      this.wallHpInput.value = String(hp);
+      this.map.walls = [this.map.walls[0] > 0 ? hp : 0, this.map.walls[1] > 0 ? hp : 0];
+      this.saveDraft();
+      this.queueDraw();
+    });
     this.button(bar, 'SAVE .FW', () => this.download()).classList.add('ed-strong');
     this.button(bar, 'TEST', () => this.test()).classList.add('ed-strong');
 
@@ -197,6 +226,7 @@ export class Editor {
       this.toolButton(palette, { kind: 'enemy', type }, enemyPicture(type, 40), `${ENEMY_NAMES[type]} (E${type}), ${w} by ${h} cells`);
     }
     this.toolButton(palette, { kind: 'enemy', type: 0 }, enemyPicture(0, 40), 'Random minion (ER)');
+    this.toolButton(palette, { kind: 'wall' }, brickCanvas(80, 40), 'Brick wall: drop it on a rail. It stands at the start of the map and holds the items of that rail until it is shot down').classList.add('ed-wide');
     ITEMS.forEach((item, drop) => {
       this.toolButton(palette, { kind: 'item', drop }, itemCanvas(drop, 80, 40), `${item.text === '?' ? 'Surprise' : item.text}: a rail item`).classList.add('ed-wide');
     });
@@ -281,7 +311,27 @@ export class Editor {
   }
 
   private summary(): string {
-    return `${fwRows(this.map)} rows, ${this.map.enemies.length} enemies, ${this.map.items.length} rail items.`;
+    const walls = this.map.walls.filter((hp) => hp > 0).length;
+    return `${fwRows(this.map)} rows, ${this.map.enemies.length} enemies, ${this.map.items.length} rail items${walls > 0 ? `, ${walls} wall${walls > 1 ? 's' : ''}` : ''}.`;
+  }
+
+  /** The HP typed for walls, kept within what a map allows. */
+  private wallHp(): number {
+    const hp = Math.floor(Number(this.wallHpInput.value));
+    return Number.isFinite(hp) ? Math.min(WALL_MAX_HP, Math.max(1, hp)) : WALL_DEFAULT_HP;
+  }
+
+  /** Height of the strip at the top of the grid where each rail's wall is shown, in pixels. */
+  private stripHeight(): number {
+    return Math.max(22, this.cell * 3);
+  }
+
+  /** Shows the map's night tick and wall HP in the bar. */
+  private syncControls(): void {
+    this.nameInput.value = this.map.name;
+    this.darkBox.checked = this.map.dark;
+    const hp = Math.max(this.map.walls[0], this.map.walls[1]);
+    if (hp > 0) this.wallHpInput.value = String(hp);
   }
 
   // --- Opening, closing, loading, saving ---------------------------------------------
@@ -313,7 +363,7 @@ export class Editor {
 
   private load(map: FwMap, note: string): void {
     this.map = map;
-    this.nameInput.value = map.name;
+    this.syncControls();
     this.scroller.scrollTop = 0;
     this.saveDraft();
     this.layout();
@@ -384,7 +434,7 @@ export class Editor {
     } catch {
       // No storage.
     }
-    this.nameInput.value = this.map.name;
+    this.syncControls();
   }
 
   // --- Painting ----------------------------------------------------------------------
@@ -405,10 +455,12 @@ export class Editor {
     const box = this.canvas.getBoundingClientRect();
     if (e.clientX < box.left || e.clientX >= box.right || e.clientY < box.top || e.clientY >= box.bottom) return null;
     const across = Math.floor((e.clientX - box.left - GUTTER) / this.cell);
-    const row = Math.floor((e.clientY - box.top + this.scroller.scrollTop) / this.cell);
-    if (across < 0 || across >= ACROSS || row < 0) return null;
+    // The strip at the top is kept for the walls; the rows start below it.
+    const top = e.clientY - box.top < this.stripHeight();
+    const row = top ? 0 : Math.floor((e.clientY - box.top - this.stripHeight() + this.scroller.scrollTop) / this.cell);
+    if (across < 0 || across >= ACROSS) return null;
     const side = across < RAIL_CELLS ? 0 : across >= RAIL_CELLS + COLS ? 1 : -1;
-    return { side, col: across - RAIL_CELLS, row };
+    return { top, side, col: across - RAIL_CELLS, row };
   }
 
   /** Left cell of the chosen enemy when the pointer is over lane column `col`. */
@@ -423,6 +475,22 @@ export class Editor {
   private apply(spot: Spot): void {
     const { side, col, row } = spot;
     const { tool, map } = this;
+
+    // A wall always stands at the start of its rail, wherever on the rail it is dropped.
+    if (tool.kind === 'wall') {
+      if (side < 0 || this.lastPlaced === `w${side}`) return;
+      this.lastPlaced = `w${side}`;
+      map.walls[side] = this.wallHp();
+      this.queueDraw();
+      return;
+    }
+    if (tool.kind === 'erase' && side >= 0 && spot.top && map.walls[side] > 0) {
+      map.walls[side] = 0;
+      this.queueDraw();
+      return;
+    }
+    // Nothing else can stand in the strip kept for the walls.
+    if (spot.top) return;
 
     if (tool.kind === 'erase') {
       const erased = side >= 0 ? eraseItemAt(map, side, row) : eraseEnemyAt(map, col, row);
@@ -464,7 +532,7 @@ export class Editor {
     this.canvas.height = Math.round(height * ratio);
     const rows = fwRows(this.map) + SPARE_ROWS;
     // The canvas stays in view; the spacer below it gives the scroll bar its length.
-    this.spacer.style.height = `${Math.max(0, rows * this.cell - height)}px`;
+    this.spacer.style.height = `${Math.max(0, rows * this.cell + this.stripHeight() - height)}px`;
     this.queueDraw();
   }
 
@@ -483,9 +551,10 @@ export class Editor {
     const ratio = this.canvas.width / (GUTTER + ACROSS * cell);
     const height = this.canvas.height / ratio;
     const scroll = this.scroller.scrollTop;
-    const first = Math.floor(scroll / cell);
+    const head = this.stripHeight();
+    const first = Math.max(0, Math.floor((scroll - head) / cell));
     const last = first + Math.ceil(height / cell) + 1;
-    const y = (row: number): number => row * cell - scroll;
+    const y = (row: number): number => head + row * cell - scroll;
     const laneX = GUTTER + RAIL_CELLS * cell;
     const rightX = laneX + COLS * cell;
 
@@ -560,17 +629,58 @@ export class Editor {
       g.lineWidth = 2;
       g.setLineDash([5, 4]);
       g.strokeStyle = tool.kind === 'erase' ? '#ff6b6b' : '#ffd166';
-      if (tool.kind === 'enemy' && hover.side < 0) {
+      if (hover.top && tool.kind !== 'wall' && tool.kind !== 'erase') {
+        // Only walls go in the strip at the top.
+      } else if (tool.kind === 'enemy' && hover.side < 0) {
         const { w, h } = enemySize(tool.type);
         g.strokeRect(laneX + this.leftFor(tool.type, hover.col) * cell, y(top), w * cell, h * cell);
       } else if (tool.kind === 'item' && hover.side >= 0) {
         g.strokeRect(hover.side === 0 ? GUTTER : rightX, y(top), RAIL_CELLS * cell, RAIL_ITEM_ROWS * cell);
+      } else if (hover.side >= 0 && (tool.kind === 'wall' || (tool.kind === 'erase' && hover.top && map.walls[hover.side] > 0))) {
+        g.strokeRect(hover.side === 0 ? GUTTER + 1 : rightX + 1, 1, RAIL_CELLS * cell - 2, this.stripHeight() - 2);
       } else if (tool.kind === 'erase') {
         const x = hover.side === 0 ? GUTTER : hover.side === 1 ? rightX : laneX + (hover.col - (hover.col % 2)) * cell;
         g.strokeRect(x, y(top), (hover.side >= 0 ? RAIL_CELLS : 2) * cell, 2 * cell);
       }
       g.setLineDash([]);
     }
+
+    // Walls: pinned to the top of their rail, whatever row is in view, because a wall
+    // stands at the start of the map and nowhere else.
+    const strip = head;
+    g.fillStyle = '#0f0d26';
+    g.fillRect(0, 0, GUTTER + ACROSS * cell, strip);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineJoin = 'round';
+    g.font = '700 10px system-ui, sans-serif';
+    g.fillStyle = '#7d86bd';
+    g.fillText('WALLS STAND HERE, AT THE START OF THE MAP, AND HOLD THE ITEMS OF THEIR RAIL', laneX + (COLS * cell) / 2, strip / 2, COLS * cell - 8);
+    // An empty place for a wall on each rail.
+    g.setLineDash([4, 3]);
+    g.strokeStyle = '#59619a';
+    g.lineWidth = 1;
+    for (const x of [GUTTER, rightX]) {
+      g.strokeRect(x + 2.5, 2.5, RAIL_CELLS * cell - 5, strip - 5);
+      g.fillText('WALL', x + (RAIL_CELLS * cell) / 2, strip / 2);
+    }
+    g.setLineDash([]);
+    map.walls.forEach((hp, side) => {
+      if (hp <= 0) return;
+      const x = side === 0 ? GUTTER : rightX;
+      const width = RAIL_CELLS * cell;
+      g.drawImage(this.brickPicture, x + 1, 1, width - 2, strip - 2);
+      g.strokeStyle = INK;
+      g.lineWidth = 2;
+      g.strokeRect(x + 1, 1, width - 2, strip - 2);
+      const size = Math.min(13, strip * 0.5);
+      g.font = `900 ${size}px "Trebuchet MS", system-ui, sans-serif`;
+      g.lineWidth = 3;
+      g.strokeText(`WALL ${hp}`, x + width / 2, strip / 2);
+      g.fillStyle = '#ffffff';
+      g.fillText(`WALL ${hp}`, x + width / 2, strip / 2);
+    });
+    g.textBaseline = 'middle';
 
     if (first === 0) {
       g.fillStyle = '#ffd166';

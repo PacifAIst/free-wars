@@ -29,6 +29,7 @@ import { FX_BLAST, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
 import { damageBubble, inBubble } from './Powerup';
 import { nextRandom } from './rng';
+import { blastWalls, damageWall, wallAt } from './Wall';
 
 export const BULLET_REGULAR = 0;
 export const BULLET_MINIGUN = 1;
@@ -180,6 +181,12 @@ export function stepBullets(sim: SimState, hash: SpatialHash): void {
       poolFree(sim.bullets, i);
       continue;
     }
+    const wall = wallAt(sim, b.x, b.y);
+    if (wall >= 0) {
+      damageWall(sim, wall, BULLET_DAMAGE, b.x);
+      poolFree(sim.bullets, i);
+      continue;
+    }
     if (threats) {
       const rocket = enemyRocketAt(sim, b.x, b.y);
       if (rocket >= 0) {
@@ -228,6 +235,7 @@ export function explode(
     if (!p.active || p.kind !== DROP_TANK) continue;
     if (Math.abs(p.x - x) < reach && Math.abs(p.y - y) < reach) damageBubble(sim, i, damage);
   }
+  blastWalls(sim, x, y, half, damage);
   const rockets = sim.rockets;
   for (let i = 0; i < rockets.high; i++) {
     const r = rockets.items[i];
@@ -275,7 +283,7 @@ export function stepRockets(sim: SimState, hash: SpatialHash): void {
       poolFree(sim.rockets, i);
       continue;
     }
-    if (hash.queryPoint(r.x, r.y, sim.enemies) < 0 && bubbleAt(sim, r.x, r.y) < 0 && enemyRocketAt(sim, r.x, r.y) < 0) continue;
+    if (hash.queryPoint(r.x, r.y, sim.enemies) < 0 && bubbleAt(sim, r.x, r.y) < 0 && enemyRocketAt(sim, r.x, r.y) < 0 && wallAt(sim, r.x, r.y) < 0) continue;
     const tank = r.kind === ROCKET_TANK;
     const { x, y } = r;
     poolFree(sim.rockets, i);

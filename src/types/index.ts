@@ -91,6 +91,16 @@ export interface Powerup {
   flash: number;
 }
 
+/** A brick wall across a rail (A37). `hp` 0 means there is none, or it is broken. */
+export interface Wall {
+  hp: number;
+  maxHp: number;
+  /** Seconds of hit flash left. */
+  flash: number;
+  /** The last laser cast that damaged it. */
+  cast: number;
+}
+
 /** A rocket fired by the swarm or the tank. */
 export interface Rocket {
   active: boolean;
@@ -194,6 +204,8 @@ export interface SimState {
   powerups: Pool<Powerup>;
   bullets: Pool<Bullet>;
   rockets: Pool<Rocket>;
+  /** The walls of the left and the right rail. */
+  walls: Wall[];
   fx: Pool<Fx>;
 }
 
@@ -226,6 +238,10 @@ export interface MapData {
   cells: Uint16Array;
   /** Side table for cells with an HP override, an authored drop or a gate. */
   overrides: CellSpec[];
+  /** A night map (A37). */
+  dark: boolean;
+  /** HP of the brick wall on the left and on the right rail; 0 for none. */
+  walls: [number, number];
 }
 
 /** A parser message. `column` is the grid column 1..44 for cells, else a character position. */

@@ -1,12 +1,13 @@
 import type { MapData, SimInput, SimState } from '../types';
 import { fireClones, stepContact } from './Clone';
 import { SpatialHash } from './Collision';
-import { POOL_ENEMIES } from './constants';
+import { GATE_TYPE, POOL_ENEMIES } from './constants';
 import { stepEnemies } from './Enemy';
 import { stepFx } from './Fx';
 import { stepShooter } from './Player';
 import { stepPowerups } from './Powerup';
 import { fireShooter, stepBullets, stepRockets } from './Projectile';
+import { isHeld } from './Wall';
 import { stepWeapons } from './Weapon';
 import { createWorld, type SimOptions, streamRows } from './World';
 
@@ -22,6 +23,16 @@ export function createScratch(enemyCapacity: number = POOL_ENEMIES): SimScratch 
 /** Creates the state for a fresh run of `map`. The same seed gives the same run. */
 export function createSim(map: MapData, seed: number, options?: Partial<SimOptions>): SimState {
   return createWorld(map, seed, options);
+}
+
+function nothingLeft(sim: SimState): boolean {
+  if (sim.enemies.live === 0) return true;
+  const { items, high } = sim.enemies;
+  for (let i = 0; i < high; i++) {
+    const e = items[i];
+    if (e.active && !(e.type === GATE_TYPE && isHeld(sim, e.x, e.y))) return false;
+  }
+  return true;
 }
 
 /**
@@ -48,8 +59,9 @@ export function stepSim(sim: SimState, map: MapData, input: SimInput, scratch: S
   stepPowerups(sim);
   stepFx(sim);
 
-  // D5: the level is won when the file has ended and no enemy is left.
-  if (sim.phase === 'playing' && sim.nextRow >= sim.totalRows && sim.enemies.live === 0) {
+  // D5: the level is won when the file has ended and no enemy is left. Panels waiting
+  // behind a wall that was never broken do not count: they would wait for ever.
+  if (sim.phase === 'playing' && sim.nextRow >= sim.totalRows && nothingLeft(sim)) {
     sim.phase = 'won';
   }
 }

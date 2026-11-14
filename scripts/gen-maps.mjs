@@ -97,6 +97,8 @@ function build(n) {
     title = `${DISTRICTS[district]}: ${name}`;
   }
 
+  // Every fourth map or so has a brick wall across its right rail, so the wall is seen in play.
+  const wall = step % 4 === 2 ? `- wall-right: ${80 + district * 40}\n` : '';
   const rows = grid.map((cells) => cells.join('\t').replace(/\t+$/, ''));
   while (rows.length > 0 && rows[rows.length - 1] === '') rows.pop();
   const difficulty = Math.min(5, 1 + district + (step >= 6 ? 1 : 0));
@@ -106,7 +108,7 @@ function build(n) {
 - name: ${title}
 - difficulty: ${difficulty}
 - author: PacifAIst
-- description: ${boss ? 'Boss map. ' : ''}Collect the panels on the rails to grow the swarm and arm it, then sweep each band before a rat reaches the goal line.
+${wall}- description: ${boss ? 'Boss map. ' : ''}Collect the panels on the rails to grow the swarm and arm it, then sweep each band before a rat reaches the goal line.
 
 ## Grid
 Columns: 44

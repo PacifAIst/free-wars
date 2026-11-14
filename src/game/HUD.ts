@@ -17,7 +17,16 @@ const BANNERS: Partial<Record<GameState, Banner>> = {
 const LEVEL_NAME_SECONDS = 3;
 /** Floating numbers that can be on screen at once. */
 const POPUPS = 10;
-/** HP bars that can be on screen at once: big rats and tank bubbles. */
+/** The wobble of an HP bar that has just lost HP: squashed, stretched, settled. */
+const HP_BOUNCE: Keyframe[] = [
+  { scale: '1 1' },
+  { scale: '1.16 0.66' },
+  { scale: '0.92 1.3' },
+  { scale: '1.06 0.9' },
+  { scale: '1 1' },
+];
+const HP_BOUNCE_MS = 320;
+/** HP bars that can be on screen at once: big rats, walls and tank bubbles. */
 const HP_BARS = 12;
 
 /** The timed weapons, in the order they are shown: name and colour. */
@@ -43,6 +52,8 @@ interface HpBar {
   shown: boolean;
   text: string;
   ratio: number;
+  /** When it last bounced, in milliseconds. */
+  bounced: number;
 }
 
 function element(className: string, parent: HTMLElement): HTMLDivElement {
@@ -102,7 +113,7 @@ export class HUD {
     for (let i = 0; i < HP_BARS; i++) {
       const root = element('hud-hp', this.root);
       const fill = element('hud-hp-fill', root);
-      this.hpBars.push({ root, fill, label: element('hud-hp-label', root), shown: false, text: '', ratio: -1 });
+      this.hpBars.push({ root, fill, label: element('hud-hp-label', root), shown: false, text: '', ratio: -1, bounced: 0 });
     }
 
     this.levelName = element('hud-level', this.root);
@@ -152,7 +163,8 @@ export class HUD {
     const height = thin ? 7 : 16;
     bar.root.style.width = `${Math.round(width)}px`;
     bar.root.style.height = `${height}px`;
-    bar.root.style.transform = `translate(${Math.round(x - width / 2)}px, ${Math.round(y - height / 2)}px)`;
+    // Placed with `translate`, not `transform`, so the wobble can scale the bar about its own middle.
+    bar.root.style.translate = `${Math.round(x - width / 2)}px ${Math.round(y - height / 2)}px`;
     const shown = Math.round(ratio * 100);
     if (shown !== bar.ratio) {
       bar.ratio = shown;
@@ -161,6 +173,12 @@ export class HUD {
       bar.fill.style.background = shown > 55 ? '#5fd66a' : shown > 25 ? '#f2b21d' : '#ef4444';
     }
     if (text !== bar.text) {
+      // The number has dropped: the bar wobbles like jelly. Not more often than it can be seen.
+      const now = performance.now();
+      if (bar.text !== '' && now - bar.bounced > HP_BOUNCE_MS * 0.6) {
+        bar.bounced = now;
+        bar.root.animate(HP_BOUNCE, { duration: HP_BOUNCE_MS, easing: 'ease-out' });
+      }
       bar.text = text;
       bar.label.textContent = text;
     }
@@ -173,6 +191,8 @@ export class HUD {
       const bar = this.hpBars[i];
       if (!bar.shown) continue;
       bar.shown = false;
+      bar.text = '';
+      bar.label.textContent = '';
       bar.root.style.display = 'none';
     }
   }

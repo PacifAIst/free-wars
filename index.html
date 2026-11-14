@@ -164,7 +164,7 @@
         background: rgba(27, 23, 54, 0.85);
         border: 2px solid var(--ink);
         overflow: hidden;
-        will-change: transform;
+        will-change: translate, scale;
       }
       .hud-hp-fill {
         position: absolute;
@@ -528,6 +528,27 @@
         flex: 1 1 110px;
         min-width: 90px;
         background: #26234d;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .ed-check {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 30px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .ed-number {
+        font: inherit;
+        width: 64px;
+        height: 26px;
+        padding: 0 6px;
+        color: #fff;
+        border-radius: 8px;
+        border: 2px solid #1b1736;
+        background: #26234d;
+        box-sizing: border-box;
         -webkit-user-select: text;
         user-select: text;
       }

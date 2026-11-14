@@ -1,4 +1,4 @@
-import { DRAG_DIRECTION, RELEASE_MOMENTUM_SECONDS } from './constants';
+import { DRAG_DIRECTION, DRAG_SENSITIVITY, RELEASE_MOMENTUM_SECONDS } from './constants';
 
 /** What the game loop needs from an input device. Lets tests drive the loop. */
 export interface InputSource {
@@ -56,7 +56,7 @@ export class Input implements InputSource {
     const px = this.dragPx;
     this.dragPx = 0;
     // The map follows the finger, so the shooter moves the other way along the lane.
-    return (-DRAG_DIRECTION * px) / cellPx;
+    return (-DRAG_DIRECTION * DRAG_SENSITIVITY * px) / cellPx;
   }
 
   keyDir(): number {

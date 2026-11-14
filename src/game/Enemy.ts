@@ -24,6 +24,7 @@ import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
 import { grantDrop, rollDrop, spawnDrop } from './Powerup';
 import { spawnEnemyRocket } from './Projectile';
+import { holdGates } from './Wall';
 
 /** A minion aims at a point at least this far down the lane, so it never turns fully sideways. */
 const MIN_AIM_AHEAD = 0.5;
@@ -246,4 +247,5 @@ export function stepEnemies(sim: SimState): void {
       sim.lossReason = 'base';
     }
   }
+  holdGates(sim);
 }

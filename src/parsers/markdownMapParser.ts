@@ -9,6 +9,9 @@
 //     - difficulty: 1
 //     - author: someone            (optional)
 //     - description: First contact.
+//     - dark: yes                  (optional: a night map; boss maps are dark unless they say no)
+//     - wall-left: 150             (optional: HP of a brick wall across the left rail)
+//     - wall-right: 150            (optional: the same for the right rail)
 //
 //     ## Grid
 //     Columns: 44
@@ -20,18 +23,18 @@
 //
 // Grid line 1 enters the lane first. The row count is whatever the file holds.
 
-import { BUILT_IN_LEVELS, COLS } from '../game/constants';
+import { BUILT_IN_LEVELS, COLS, DARK_EVERY, WALL_MAX_HP } from '../game/constants';
 import type { MapData, ParseIssue, ParseResult } from '../types';
 import { CellEncoder, parseToken } from './tokens';
 
 /** Parsing stops collecting after this many errors; one broken paste can produce thousands. */
 const MAX_ERRORS = 50;
 
-const HEADER_KEYS = ['id', 'name', 'difficulty', 'author', 'description'] as const;
+const HEADER_KEYS = ['id', 'name', 'difficulty', 'author', 'description', 'dark', 'wall-left', 'wall-right'] as const;
 type HeaderKey = (typeof HEADER_KEYS)[number];
 
 const TITLE_LINE = /^#\s+(?:Map:\s*)?(.*)$/i;
-const FIELD_LINE = /^[-*]\s*([A-Za-z]+)\s*:\s*(.*)$/;
+const FIELD_LINE = /^[-*]\s*([A-Za-z][A-Za-z-]*)\s*:\s*(.*)$/;
 const GRID_HEADING = /^##\s+Grid\s*$/i;
 const COLUMNS_LINE = /^Columns\s*:\s*(\S+)\s*$/i;
 const ROWS_LINE = /^Rows\s*:\s*(\S+)/i;
@@ -283,6 +286,19 @@ export function parseMap(text: string): ParseResult {
 
   if (errors.length > 0) return { ok: false, errors };
 
+  // A37: night maps and brick walls.
+  const yes = (text: string): boolean => /^(yes|true|1|on)$/i.test(text);
+  const idNumber = /^[1-9]\d*$/.test(header.id ?? '') ? Number(header.id) : 0;
+  const dark = header.dark === undefined ? idNumber > 0 && idNumber % DARK_EVERY === 0 : yes(header.dark);
+  const wallHp = (key: 'wall-left' | 'wall-right'): number => {
+    const text = header[key];
+    if (text === undefined) return 0;
+    const hp = Number(text);
+    if (Number.isInteger(hp) && hp >= 0 && hp <= WALL_MAX_HP) return hp;
+    warn(1, 1, `${key} "${text}" is not a whole number from 0 to ${WALL_MAX_HP}; no wall`);
+    return 0;
+  };
+
   const map: MapData = {
     id: header.id as string,
     title: title || name || 'Untitled',
@@ -294,6 +310,8 @@ export function parseMap(text: string): ParseResult {
     rows,
     cells: cells.slice(0, rows * COLS),
     overrides: encoder.overrides,
+    dark,
+    walls: [wallHp('wall-left'), wallHp('wall-right')],
   };
   return { ok: true, map, warnings };
 }

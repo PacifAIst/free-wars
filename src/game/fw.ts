@@ -6,6 +6,8 @@
 //   name: My map
 //   0,L,+10          row 0, left rail: a +10 panel
 //   0,R,ROCKET       row 0, right rail: a rocket panel
+//   0,L,WALL hp=150  a brick wall across the left rail (row 0 only)
+//   dark: yes        a night map
 //   112,0,E1         row 112, column 0: a minion
 //   230,14,E4 hp=320 drop=+50
 //
@@ -19,7 +21,7 @@
 import { formatIssue, parseMap } from '../parsers/markdownMapParser';
 import { cellSpec } from '../parsers/tokens';
 import type { MapData } from '../types';
-import { COLS, DROP_CODE_MAX, ENEMY_STATS, ENEMY_TYPE_COUNT, GATE_TYPE } from './constants';
+import { COLS, DROP_CODE_MAX, ENEMY_STATS, ENEMY_TYPE_COUNT, GATE_TYPE, WALL_MAX_HP } from './constants';
 
 export interface FwEnemy {
   row: number;
@@ -45,6 +47,10 @@ export interface FwMap {
   name: string;
   enemies: FwEnemy[];
   items: FwItem[];
+  /** A night map. */
+  dark: boolean;
+  /** HP of the brick wall on the left and on the right rail; 0 for none. */
+  walls: [number, number];
 }
 
 export const FW_HEADER = 'FREE-WARS MAP 1';
@@ -58,7 +64,7 @@ export const RAIL_ITEM_ROWS = ENEMY_STATS[GATE_TYPE].h;
 const EDGE = 4;
 
 export function emptyFwMap(name = 'My map'): FwMap {
-  return { name, enemies: [], items: [] };
+  return { name, enemies: [], items: [], dark: false, walls: [0, 0] };
 }
 
 /** Footprint of an enemy type in cells. A random minion is a minion. */
@@ -130,6 +136,11 @@ export function formatFw(map: FwMap): string {
     entries.push([e.row, e.col, `${e.row},${e.col},${enemyToken(e)}${hp}${drop}`]);
   }
   entries.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (map.dark) lines.splice(2, 0, 'dark: yes');
+  // A wall stands at the start of its rail, so it is always written on row 0.
+  map.walls.forEach((hp, side) => {
+    if (hp > 0) lines.push(`0,${side === 0 ? 'L' : 'R'},WALL hp=${hp}`);
+  });
   for (const entry of entries) lines.push(entry[2]);
   return `${lines.join('\n')}\n`;
 }
@@ -152,6 +163,11 @@ export function parseFw(text: string): FwMap | null {
       map.name = name[1].slice(0, 80);
       continue;
     }
+    const dark = /^dark\s*:\s*(\w+)$/i.exec(line);
+    if (dark) {
+      map.dark = /^(yes|true|1|on)$/i.test(dark[1]);
+      continue;
+    }
     const parts = line.split(',').map((part) => part.trim());
     if (parts.length !== 3) return null;
     const row = wholeNumber(parts[0]);
@@ -159,6 +175,14 @@ export function parseFw(text: string): FwMap | null {
     const column = parts[1].toUpperCase();
 
     if (column === 'L' || column === 'R') {
+      // A wall: only at the start of the map, with its HP.
+      const wall = /^WALL\s+HP=(\d{1,6})$/i.exec(parts[2]);
+      if (wall) {
+        const hp = Number(wall[1]);
+        if (row !== 0 || hp < 1 || hp > WALL_MAX_HP) return null;
+        map.walls[column === 'L' ? 0 : 1] = hp;
+        continue;
+      }
       const drop = FW_ITEM_NAMES.indexOf(parts[2].toUpperCase());
       if (drop < 0) return null;
       placeItem(map, { row, side: column === 'L' ? 0 : 1, drop });
@@ -212,7 +236,8 @@ export function fwToMapData(map: FwMap, id = 'custom'): MapData | null {
   }
   const name = map.name.replace(/\s+/g, ' ').trim() || 'My map';
   const rows = grid.map((cells) => cells.join('\t').replace(/\t+$/, ''));
-  const text = `# Map: ${name}\n\n- id: ${id}\n- name: ${name}\n- difficulty: 1\n\n## Grid\nColumns: ${COLS}\n\n\`\`\`\n${rows.join('\n')}\n\`\`\`\n`;
+  const walls = `${map.walls[0] > 0 ? `- wall-left: ${map.walls[0]}\n` : ''}${map.walls[1] > 0 ? `- wall-right: ${map.walls[1]}\n` : ''}`;
+  const text = `# Map: ${name}\n\n- id: ${id}\n- name: ${name}\n- difficulty: 1\n- dark: ${map.dark ? 'yes' : 'no'}\n${walls}\n## Grid\nColumns: ${COLS}\n\n\`\`\`\n${rows.join('\n')}\n\`\`\`\n`;
   const result = parseMap(text);
   if (!result.ok) {
     console.warn(`[free-wars] map refused: ${result.errors.map(formatIssue).join('; ')}`);
@@ -224,6 +249,8 @@ export function fwToMapData(map: FwMap, id = 'custom'): MapData | null {
 /** Turns a map the game plays, such as a built-in one, into an editor map. */
 export function mapDataToFw(data: MapData): FwMap {
   const map = emptyFwMap(data.name || data.title || 'My map');
+  map.dark = data.dark;
+  map.walls = [data.walls[0], data.walls[1]];
   for (let r = 0; r < data.rows; r++) {
     for (let c = 0; c < COLS; c++) {
       const id = data.cells[r * COLS + c];

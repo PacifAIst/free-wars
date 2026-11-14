@@ -57,6 +57,8 @@ import {
   RAIL_LEFT_X,
   RAIL_RIGHT_X,
   RAIL_WIDTH,
+  WALL_DEPTH,
+  WALL_Y,
   SHADOW_MAP_SIZE,
   SHOOTER_DRAW_SCALE,
   SHOOTER_Y,
@@ -81,6 +83,7 @@ import {
   FX_PICKUP,
   FX_PUNCH,
   FX_TANK,
+  FX_WALL,
 } from '../game/Fx';
 import type { GameView, RenderFrame } from '../game/Game';
 import { HUD } from '../game/HUD';
@@ -88,11 +91,12 @@ import { getLayout } from '../game/layout';
 import { MENU_TRACK, type Music, musicTrackFor } from '../game/Music';
 import { SHOOTER_MAX_X, SHOOTER_MIN_X } from '../game/Player';
 import { BULLET_MINIGUN, ROCKET_ENEMY, ROCKET_TANK } from '../game/Projectile';
+import { wallX } from '../game/Wall';
 import { LASER_CHARGING, LASER_FIRING, laserCharge, laserPhase } from '../game/Weapon';
 import { cellSpec } from '../parsers/tokens';
 import type { Enemy, GameState, SimState } from '../types';
 import { Batch } from './Batch';
-import { ITEMS, itemCanvas } from './icons';
+import { brickCanvas, ITEMS, itemCanvas } from './icons';
 import {
   blobGeometry,
   bulletGeometry,
@@ -128,6 +132,15 @@ const SHOT_SECONDS = 0.09;
 const BIG_CAPACITY = 24;
 /** Width of the big-enemy model at scale 1, so a footprint of w cells is filled. */
 const BIG_MODEL_WIDTH = 1.22;
+/** Height of a brick wall, and the bricks that fly when it breaks. */
+const WALL_HEIGHT = 10;
+const BRICKS_PER_WALL = 40;
+const MAX_BRICKS = 96;
+const BRICK_FIELDS = 10;
+const BRICK_SECONDS = 1.5;
+/** Light and sky by day and by night (A37). */
+const DAY = { back: 0x0d1029, sky: 0xe6ecff, hemi: 0.8, sun: 2.6, sunColor: 0xfff0d0, env: 0.5 };
+const NIGHT = { back: 0x030208, sky: 0x7f93ff, hemi: 0.36, sun: 0.95, sunColor: 0x9fb2ff, env: 0.16 };
 /** Height of a big rat's HP bar above the lane, in model units: just over its ears. */
 const BAR_HEIGHT = 1.85;
 /** Seconds an arm stays out after its punch has landed. */
@@ -283,6 +296,15 @@ export class Renderer3D implements GameView {
   private barCount = 0;
   /** Seconds since the rockets last left a puff of smoke. */
   private trail = 0;
+  /** The brick wall of each rail, and its bricks in the air after it breaks. */
+  private readonly walls: Mesh[] = [];
+  private readonly debris: Batch;
+  /** x, y, z, vx, vy, vz, age, spin, size, shade. */
+  private readonly bricks = new Float32Array(MAX_BRICKS * BRICK_FIELDS);
+  private brickCount = 0;
+  private hemi!: HemisphereLight;
+  private sun!: DirectionalLight;
+  private dark = false;
 
   private width = 1;
   private height = 1;
@@ -478,6 +500,25 @@ export class Renderer3D implements GameView {
       this.beam,
     );
 
+    // --- brick walls across the rails (A37) ---
+    for (let side = 0; side < 2; side++) {
+      const texture = new CanvasTexture(brickCanvas(512, 256, 5));
+      texture.colorSpace = SRGBColorSpace;
+      texture.anisotropy = 4;
+      const wall = new Mesh(
+        new BoxGeometry(RAIL_WIDTH - 0.5, WALL_HEIGHT, WALL_DEPTH * 0.8).translate(0, WALL_HEIGHT / 2, 0),
+        new MeshLambertMaterial({ map: texture }),
+      );
+      wall.position.set(wallX(side), 0, WALL_Y);
+      wall.castShadow = true;
+      wall.visible = false;
+      this.walls.push(wall);
+      this.scene.add(wall);
+    }
+    this.debris = new Batch(new BoxGeometry(1, 0.5, 0.5), new MeshLambertMaterial(), MAX_BRICKS, true);
+    this.debris.mesh.castShadow = true;
+    this.scene.add(this.debris.mesh);
+
     this.scene.add(this.sparks.puff.mesh, this.sparks.glow.mesh);
 
     this.hud = new HUD(host);
@@ -499,11 +540,13 @@ export class Renderer3D implements GameView {
     // on every physically based material, with no texture file to ship.
     const pmrem = new PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.5;
+    this.scene.environmentIntensity = DAY.env;
     pmrem.dispose();
 
-    this.scene.add(new HemisphereLight(0xe6ecff, 0x2f3570, 0.8));
-    const sun = new DirectionalLight(0xfff0d0, 2.6);
+    this.hemi = new HemisphereLight(DAY.sky, 0x2f3570, DAY.hemi);
+    this.scene.add(this.hemi);
+    const sun = new DirectionalLight(DAY.sunColor, DAY.sun);
+    this.sun = sun;
     sun.position.set(COLS / 2 - 60, 120, WINDOW_ROWS / 2 + 90);
     sun.target.position.set(COLS / 2, 0, WINDOW_ROWS / 2);
     sun.castShadow = true;
@@ -673,7 +716,7 @@ export class Renderer3D implements GameView {
     camera.lookAt(COLS / 2, 0, SHOOTER_Y - near);
     camera.updateMatrixWorld();
     this.sparks.face(camera);
-    this.scene.fog = new Fog(SKY, distance * 1.25, distance * 2.6);
+    this.scene.fog = new Fog(this.dark ? NIGHT.back : DAY.back, distance * 1.25, distance * 2.6);
 
     // Screen pixels per grid unit at the shooter: converts drag distance to lane distance.
     const a = this.probe.set(COLS / 2, 0, SHOOTER_Y).project(camera).x;
@@ -704,6 +747,8 @@ export class Renderer3D implements GameView {
       this.lastCooldown.fill(0);
       this.shotGlow.fill(0);
       this.sparks.clear();
+      this.brickCount = 0;
+      this.setDark(frame.map.dark);
     }
     this.react(frame, time);
     walkClock.value = time;
@@ -724,6 +769,7 @@ export class Renderer3D implements GameView {
     this.drawBullets(frame);
     this.drawBoxes(frame, time);
     this.drawWeapons(frame, x, time, dt);
+    this.drawWalls(frame, dt);
     this.hud.endHpBars(this.barCount);
     this.sparks.update(dt);
 
@@ -761,7 +807,9 @@ export class Renderer3D implements GameView {
 
     if (sim.shots > this.lastShots) {
       // A big swarm fires softly, so the volley does not drown everything else.
-      sfx.shot(1 / Math.sqrt(1 + sim.clones * 0.12));
+      const volume = 1 / Math.sqrt(1 + sim.clones * 0.12);
+      if (sim.minigun > 0) sfx.minigun(volume);
+      else sfx.shot(volume);
       this.lastShots = sim.shots;
     }
     if (sim.rocketsFired > this.lastRockets || sim.enemyRocketsFired > this.lastEnemyRockets) {
@@ -863,6 +911,29 @@ export class Renderer3D implements GameView {
           this.shake = Math.max(this.shake, f.size >= 30 ? 1 : 0.8);
           sfx.punch(f.size);
           break;
+        case FX_WALL: {
+          // The wall bursts: bricks fly up the rail and tumble, dust rolls out.
+          for (let n = 0; n < BRICKS_PER_WALL && this.brickCount < MAX_BRICKS; n++) {
+            const o = this.brickCount++ * BRICK_FIELDS;
+            const b = this.bricks;
+            b[o] = x + (Math.random() - 0.5) * (RAIL_WIDTH - 2);
+            b[o + 1] = Math.random() * WALL_HEIGHT;
+            b[o + 2] = z;
+            b[o + 3] = (Math.random() - 0.5) * 22;
+            b[o + 4] = 10 + Math.random() * 20;
+            b[o + 5] = -(4 + Math.random() * 26);
+            b[o + 6] = 0;
+            b[o + 7] = (Math.random() - 0.5) * 22;
+            b[o + 8] = 1.6 + Math.random() * 1.4;
+            b[o + 9] = 0.75 + Math.random() * 0.4;
+          }
+          sparks.burst(1, 26, x, 3, z, 16, 9, 1.0, 3, 10, 0.72, 0.6, 0.55, 3);
+          sparks.burst(0, 30, x, 4, z, 26, 18, 0.6, 1.8, 0.3, 1.0, 0.6, 0.35, 28);
+          sparks.emit(0, x, 4, z, 0, 0, 0, 0.3, 8, 34, 1.0, 0.8, 0.6);
+          this.shake = 1;
+          sfx.wallBreak();
+          break;
+        }
         case FX_BOMB:
           // A bomb on a rail: a wide blast and the number of units it cost.
           sparks.burst(0, 60, x, 2, z, 34, 20, 0.7, 2.2, 0.3, 1.0, 0.55, 0.15, 26);
@@ -1232,6 +1303,67 @@ export class Renderer3D implements GameView {
     }
     this.bubbles.end();
     this.bubbleTanks.end();
+  }
+
+  /** Turns the scene to night, or back to day (A37): dimmer, bluer light and a darker sky. */
+  private setDark(dark: boolean): void {
+    this.dark = dark;
+    const look = dark ? NIGHT : DAY;
+    (this.scene.background as Color).set(look.back);
+    (this.scene.fog as Fog).color.set(look.back);
+    this.scene.environmentIntensity = look.env;
+    this.hemi.intensity = look.hemi;
+    this.hemi.color.set(look.sky);
+    this.sun.intensity = look.sun;
+    this.sun.color.set(look.sunColor);
+  }
+
+  /** The brick walls with their HP bars, and the bricks of a broken one. */
+  private drawWalls(frame: RenderFrame, dt: number): void {
+    const { sim } = frame;
+    for (let side = 0; side < 2; side++) {
+      const wall = sim.walls[side];
+      const mesh = this.walls[side];
+      mesh.visible = wall.hp > 0;
+      if (wall.hp <= 0) continue;
+      // A hit makes it jump and glow; damage wears its top down a little.
+      const hit = wall.flash > 0 ? 1 : 0;
+      mesh.scale.set(1 + 0.03 * hit, (0.7 + 0.3 * (wall.hp / wall.maxHp)) * (1 + 0.05 * hit), 1);
+      (mesh.material as MeshLambertMaterial).emissive.setHex(hit ? 0x6a2a14 : 0x000000);
+      this.placeBar(wallX(side), WALL_HEIGHT + 3, WALL_Y, 74, wall.hp / wall.maxHp, String(Math.ceil(wall.hp)));
+    }
+
+    const b = this.bricks;
+    this.debris.begin();
+    let n = 0;
+    while (n < this.brickCount) {
+      const o = n * BRICK_FIELDS;
+      b[o + 6] += dt;
+      if (b[o + 6] >= BRICK_SECONDS) {
+        const last = --this.brickCount * BRICK_FIELDS;
+        if (last !== o) b.copyWithin(o, last, last + BRICK_FIELDS);
+        continue;
+      }
+      b[o + 4] -= 60 * dt;
+      b[o] += b[o + 3] * dt;
+      b[o + 1] += b[o + 4] * dt;
+      b[o + 2] += b[o + 5] * dt;
+      if (b[o + 1] < 0.3) {
+        // A brick that lands bounces once or twice and slows.
+        b[o + 1] = 0.3;
+        b[o + 4] = Math.abs(b[o + 4]) * 0.35;
+        b[o + 3] *= 0.6;
+        b[o + 5] *= 0.6;
+        b[o + 7] *= 0.5;
+      }
+      const life = b[o + 6] / BRICK_SECONDS;
+      const size = b[o + 8] * (life > 0.75 ? (1 - life) * 4 : 1);
+      this.debris.addTumbling(b[o], b[o + 1], b[o + 2], size, b[o + 6] * b[o + 7], 0.25);
+      const shade = b[o + 9];
+      this.debris.tint(1.0 * shade, 0.38 * shade, 0.24 * shade);
+      n++;
+    }
+    this.debris.end();
   }
 
   private drawBullets(frame: RenderFrame): void {

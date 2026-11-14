@@ -124,6 +124,20 @@ export const GATE_WIDTH = RAIL_WIDTH;
 /** Lane coordinates of the centre line of the left and right rail. */
 export const RAIL_LEFT_X = -RAIL_WIDTH / 2;
 export const RAIL_RIGHT_X = COLS + RAIL_WIDTH / 2;
+/**
+ * Brick walls (A37). A map may put a wall across either rail. It stands still at
+ * lane row WALL_Y from the start of the level and holds the panels that come
+ * down its rail until shots have used up its HP.
+ */
+export const WALL_Y = 110;
+export const WALL_DEPTH = 2 * UNIT;
+/** Space left between the wall and the panels queued behind it. */
+export const WALL_GAP = 0.4;
+/** HP of a wall when the map editor places one. */
+export const WALL_DEFAULT_HP = 150;
+export const WALL_MAX_HP = 100000;
+/** Maps that are dark unless they say otherwise: the boss maps. */
+export const DARK_EVERY = 11;
 /** Minions start to swing towards the swarm at this lane row and aim fully at it FUNNEL_END_ROWS above the shooter. */
 export const FUNNEL_START_ROW = 6;
 export const FUNNEL_END_ROWS = 5;
@@ -229,7 +243,8 @@ export const MINIGUN_CAP_SECONDS = 30;
 
 // Laser (SPEC 8, 8.1; B5)
 export const LASER_CHARGE_SECONDS = 2;
-export const LASER_BEAM_SECONDS = 0.5;
+/** A37: half the SPEC's 0.5 s. A beam swept with the mouse cleared too much of the lane. */
+export const LASER_BEAM_SECONDS = 0.25;
 export const LASER_COOLDOWN_SECONDS = 3;
 export const LASER_TOTAL_SECONDS = 10;
 export const LASER_WIDTH = 4 * UNIT;
@@ -274,6 +289,11 @@ export const KEY_PAN_SPEED = 26;
 export const RELEASE_MOMENTUM_SECONDS = 0.12;
 /** +1: the map follows the finger (SPEC 5). -1: the swarm follows the finger (the owner's choice, A28). */
 export const DRAG_DIRECTION = -1;
+/**
+ * How far the swarm moves for a drag, as a share of the drag itself. The owner found
+ * the swarm too quick under the mouse and asked for 44% less (A37).
+ */
+export const DRAG_SENSITIVITY = 0.56;
 
 // --- D9: -P# drop codes --------------------------------------------------------
 

@@ -30,6 +30,10 @@ MAP EDITOR on the splash screen. Drag an enemy or an item from the palette onto 
 it and press on the grid; drag on to paint minions and rail items; the rubber erases. Whatever
 you place replaces what it covers. Scroll down for more rows: row 0 reaches the swarm first.
 
+- **Brick wall:** drop it on a rail. It goes in the strip above the grid, because a wall stands
+  at the start of the map; it holds the items of that rail until it is shot down. WALL HP sets
+  how many shots it takes.
+- **DARK MAP** makes it a night map.
 - **Template** loads one of the 44 maps to start from.
 - **SAVE .FW** downloads the map as a text file. **UPLOAD .FW** reads one back, in your browser
   only. **LINK** reads one from a web address. A file that is not a map gives "Wrong file".
@@ -44,6 +48,8 @@ FREE-WARS MAP 1
 name: My map
 0,L,+10
 0,R,ROCKET
+0,L,WALL hp=150
+dark: yes
 112,0,E1
 230,14,E4 hp=320 drop=+50
 ```
@@ -65,6 +71,8 @@ the page reloads. The ones you will want most:
 | Fire rate, bullet speed and damage | `FIRE_RATE`, `CLONE_FIRE_RATE_FACTOR`, `BULLET_SPEED`, `BULLET_DAMAGE` |
 | Weapons | `MINIGUN_*`, `LASER_*`, `ROCKET_*`, `TANK_*` |
 | Bomb | `BOMB_KILLS`, `BOMB_HITS_CATS` |
+| Brick wall | `WALL_Y`, `WALL_DEFAULT_HP` |
+| How far a drag moves the swarm | `DRAG_SENSITIVITY` |
 | Speed of panels and boxes | `RAIL_ITEM_SPEED_SPEC`, `POWERUP_SPEED` |
 | Clones at the start, clone cap | `START_CLONES`, `CLONE_CAP` |
 | Camera | `CAMERA_*`, `VIEW_COLS` |

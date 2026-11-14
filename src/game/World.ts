@@ -22,6 +22,7 @@ import { createShooter } from './Player';
 import { createPool } from './Pool';
 import { makePowerup } from './Powerup';
 import { makeBullet, makeRocket } from './Projectile';
+import { makeWall } from './Wall';
 
 export interface PoolCapacities {
   enemies: number;
@@ -57,6 +58,8 @@ export const EMPTY_MAP: MapData = {
   rows: 0,
   cells: new Uint16Array(0),
   overrides: [],
+  dark: false,
+  walls: [0, 0],
 };
 
 /** Spawns one grid row. Returns false, spawning nothing, if the enemy pool cannot hold it. */
@@ -149,6 +152,7 @@ export function createWorld(map: MapData, seed: number, options: Partial<SimOpti
     powerups: createPool(capacities.powerups, makePowerup),
     bullets: createPool(capacities.bullets, makeBullet),
     rockets: createPool(capacities.rockets, makeRocket),
+    walls: [makeWall(map.walls[0]), makeWall(map.walls[1])],
     fx: createPool(capacities.fx, makeFx),
   };
   addClones(sim, options.startClones ?? START_CLONES);
