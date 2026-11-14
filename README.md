@@ -1,4 +1,4 @@
-# FREE-WARS
+# FREE-WARS (BETA)
 
 A 3D fixed-shooter crowd game for the browser. A black cat and its clone swarm hold a 44-column lane
 against a marching army of rats. Drag to move the swarm; it fires on its own. *Because it is about damn time...*
