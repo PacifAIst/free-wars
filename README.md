@@ -6,6 +6,20 @@ against a marching army of rats. Drag to move the swarm; it fires on its own.
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
 
+## Screenshots
+
+<img src="docs/screenshots/menu.png" width="230" alt="Main menu">
+<img src="docs/screenshots/map-grid.png" width="230" alt="Map grid">
+<img src="docs/screenshots/minigun.png" width="230" alt="Panels on the rails and the minigun">
+<img src="docs/screenshots/wall.png" width="230" alt="A brick wall holding panels">
+<img src="docs/screenshots/wall-breaking.png" width="230" alt="The wall breaking">
+<img src="docs/screenshots/rockets.png" width="230" alt="Rocket mode">
+<img src="docs/screenshots/laser.png" width="230" alt="The laser">
+<img src="docs/screenshots/boss-punch.png" width="230" alt="A boss punching the swarm">
+<img src="docs/screenshots/night-boss-map.png" width="230" alt="A night boss map">
+
+<img src="docs/screenshots/map-editor.png" width="700" alt="Map editor">
+
 ## Play
 
 - PLAY opens the grid of 44 maps. Map 1 is open; winning a map opens the next. Progress is saved in the browser.
