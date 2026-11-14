@@ -79,7 +79,7 @@ Column 0-43 is the left cell of a unit in the lane; `L` and `R` are the rails. I
 
 ## Changing the numbers
 
-Every speed, HP, damage, size and timing is in one file: **`[src/game/constants.ts](https://github.com/PacifAIst/free-wars/blob/main/src/game/constants.ts)`**. Save it and
+Every speed, HP, damage, size and timing is in one file: [**`[src/game/constants.ts]`**](https://github.com/PacifAIst/free-wars/blob/main/src/game/constants.ts). Save it and
 the page reloads. The ones you will want most:
 
 | What | Constant |
