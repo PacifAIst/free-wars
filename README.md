@@ -5,7 +5,9 @@ against a marching army of rats. Drag to move the swarm; it fires on its own. *B
 
 [PLAY HERE](https://free-wars.pages.dev/)
 
-Includes a map editor to share your own maps. **We are looking for map designers to replace the initial dummy 44 maps, please contact us sending an issue, so we can make the game more enjoyable**.
+Includes a map editor to share your own maps.
+
+Important!! **We are looking for map designers (we only have dummy maps so far) to replace the initial dummy 44 maps, please contact us sending an issue, so we can make the game more enjoyable**.
 
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
