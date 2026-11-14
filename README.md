@@ -127,7 +127,7 @@ npm test             # run the tests
 npm run check        # typecheck, lint, tests and both builds
 ```
 
-To publish to https://free-wars.pages.dev/, run `.deploy.ps1` in PowerShell from the project folder.
+To publish to https://free-wars.pages.dev/, run `.\deploy.ps1` in PowerShell from the project folder.
 
 ## Art
 
