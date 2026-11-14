@@ -1,7 +1,9 @@
 # FREE-WARS
 
 A 3D fixed-shooter crowd game for the browser. A black cat and its clone swarm hold a 44-column lane
-against a marching army of rats. Drag to move the swarm; it fires on its own.
+against a marching army of rats. Drag to move the swarm; it fires on its own. *Because it is about damn time...*
+
+[PLAY HERE](https://free-wars.pages.dev/)
 
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
@@ -17,8 +19,7 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 <img src="images/laser.png" width="230" alt="The laser">
 <img src="images/boss-punch.png" width="230" alt="A boss punching the swarm">
 <img src="images/night-boss-map.png" width="230" alt="A night boss map">
-
-<img src="docs/screenshots/map-editor.png" width="700" alt="Map editor">
+<img src="images/map-editor.png" width="700" alt="Map editor">
 
 ## Play
 
