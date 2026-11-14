@@ -98,14 +98,37 @@ the page reloads. The ones you will want most:
 | Camera | `CAMERA_*`, `VIEW_COLS` |
 | Volumes | `SFX_VOLUME`, `MUSIC_VOLUME_RATIO` |
 
+## Play online
+
+https://free-wars.pages.dev/ — nothing to install.
+
+## Run it on your computer
+
+You need [Git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org/) 20 or newer (22 recommended).
+In a terminal:
+
+```
+git clone https://github.com/PacifAIst/free-wars.git
+cd free-wars
+npm ci
+npm run dev
+```
+
+Then open http://localhost:5173/ in your browser. Keep the terminal open while you play; Ctrl+C stops it.
+Anything you save in `src/` or `public/maps/` shows up in the page straight away.
+
+To get the latest version later: `git pull`, then `npm ci`, then `npm run dev` again.
+
 ## Develop
 
 ```
-npm ci
-npm run dev          # Vite dev server
-npm test             # Vitest
+npm run dev          # dev server at http://localhost:5173/
+npm test             # run the tests
 npm run check        # typecheck, lint, tests and both builds
 ```
+
+Every push to `main` on GitHub runs the checks and, if they pass, publishes the game to
+https://free-wars.pages.dev/ (see `.github/workflows/ci.yml`).
 
 ## Build
 
