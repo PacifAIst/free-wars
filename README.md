@@ -5,6 +5,8 @@ against a marching army of rats. Drag to move the swarm; it fires on its own. *B
 
 [PLAY HERE](https://free-wars.pages.dev/)
 
+Includes a map editor to share your own maps. **We are looking for map designers to replace the initial dummy 44 maps, please contact us sending an issue, so we can make the game more enjoyabler**.
+
 Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the milestone plan,
 `SPEC.md` for the original specification and `DESIGN_DECISIONS.md` for every deviation.
 
@@ -77,7 +79,7 @@ Column 0-43 is the left cell of a unit in the lane; `L` and `R` are the rails. I
 
 ## Changing the numbers
 
-Every speed, HP, damage, size and timing is in one file: `src/game/constants.ts`. Save it and
+Every speed, HP, damage, size and timing is in one file: **`src/game/constants.ts`**. Save it and
 the page reloads. The ones you will want most:
 
 | What | Constant |
@@ -121,3 +123,7 @@ and every sound effect is synthesised in `src/game/Audio.ts`; there are no model
 ## Licence
 
 AGPL-3.0. See `LICENSE`.
+
+---
+
+<p align="center">Made with ❤️ for the Local AI Community by PacifAIst</p>
