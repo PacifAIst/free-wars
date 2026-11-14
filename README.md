@@ -119,10 +119,6 @@ Anything you save in `src/` or `public/maps/` shows up in the page straight away
 
 To get the latest version later: `git pull`, then `npm ci`, then `npm run dev` again.
 
-## Play online
-
-https://free-wars.pages.dev/ — nothing to install.
-
 ## Run it on your computer
 
 You need [Git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org/) 20 or newer (22 recommended).
