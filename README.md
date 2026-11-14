@@ -8,15 +8,15 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 
 ## Screenshots
 
-<img src="docs/screenshots/menu.png" width="230" alt="Main menu">
-<img src="docs/screenshots/map-grid.png" width="230" alt="Map grid">
-<img src="docs/screenshots/minigun.png" width="230" alt="Panels on the rails and the minigun">
-<img src="docs/screenshots/wall.png" width="230" alt="A brick wall holding panels">
-<img src="docs/screenshots/wall-breaking.png" width="230" alt="The wall breaking">
-<img src="docs/screenshots/rockets.png" width="230" alt="Rocket mode">
-<img src="docs/screenshots/laser.png" width="230" alt="The laser">
-<img src="docs/screenshots/boss-punch.png" width="230" alt="A boss punching the swarm">
-<img src="docs/screenshots/night-boss-map.png" width="230" alt="A night boss map">
+<img src="images/menu.png" width="230" alt="Main menu">
+<img src="images/map-grid.png" width="230" alt="Map grid">
+<img src="images/minigun.png" width="230" alt="Panels on the rails and the minigun">
+<img src="images/wall.png" width="230" alt="A brick wall holding panels">
+<img src="images/wall-breaking.png" width="230" alt="The wall breaking">
+<img src="images/rockets.png" width="230" alt="Rocket mode">
+<img src="images/laser.png" width="230" alt="The laser">
+<img src="images/boss-punch.png" width="230" alt="A boss punching the swarm">
+<img src="images/night-boss-map.png" width="230" alt="A night boss map">
 
 <img src="docs/screenshots/map-editor.png" width="700" alt="Map editor">
 
