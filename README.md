@@ -12,9 +12,7 @@ Status: in development. See `PROGRESS.md` for what is built, `PLAN.md` for the m
 
 <img src="images/menu.png" width="230" alt="Main menu">
 <img src="images/map-grid.png" width="230" alt="Map grid">
-<img src="images/minigun.png" width="230" alt="Panels on the rails and the minigun">
 <img src="images/wall.png" width="230" alt="A brick wall holding panels">
-<img src="images/wall-breaking.png" width="230" alt="The wall breaking">
 <img src="images/rockets.png" width="230" alt="Rocket mode">
 <img src="images/laser.png" width="230" alt="The laser">
 <img src="images/boss-punch.png" width="230" alt="A boss punching the swarm">
