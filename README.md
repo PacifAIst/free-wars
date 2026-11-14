@@ -127,6 +127,8 @@ npm test             # run the tests
 npm run check        # typecheck, lint, tests and both builds
 ```
 
+To publish to https://free-wars.pages.dev/, run `.deploy.ps1` in PowerShell from the project folder.
+
 ## Art
 
 The game is drawn in 3D with three.js. Every model is built from code in `src/render/models.ts`,
