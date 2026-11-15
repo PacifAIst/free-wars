@@ -18,10 +18,10 @@ describe('constants', () => {
     expect(ENEMY_STATS[7].speedSpec * SPEED_SCALE).toBeCloseTo(MARCH_SPEED * 0.5);
   });
 
-  it('A33: a minion crosses the window in about 12 seconds', () => {
+  it('A38: a minion crosses the window in about 22 seconds', () => {
     const seconds = WINDOW_ROWS / MARCH_SPEED;
-    expect(seconds).toBeGreaterThan(8);
-    expect(seconds).toBeLessThan(20);
+    expect(seconds).toBeGreaterThan(18);
+    expect(seconds).toBeLessThan(27);
   });
 
   it('B8: boxes fall faster than the army marches', () => {
@@ -29,8 +29,8 @@ describe('constants', () => {
   });
 
   it('has stats for all eight enemy types that fit the lane', () => {
-    // Index 0 is unused and the last entry is the side gate.
-    expect(ENEMY_STATS).toHaveLength(ENEMY_TYPE_COUNT + 2);
+    // Index 0 is unused; the last two entries are the rail gate and the tank bubble.
+    expect(ENEMY_STATS).toHaveLength(ENEMY_TYPE_COUNT + 3);
     for (let t = 1; t <= ENEMY_TYPE_COUNT; t++) {
       const s = ENEMY_STATS[t];
       expect(s.hp).toBeGreaterThan(0);

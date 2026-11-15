@@ -3,9 +3,12 @@ import { formationRadius } from './Clone';
 import {
   BIG_CHASE_SPEED,
   BIG_ENEMY_MIN_TYPE,
+  BUBBLE_TYPE,
   COLS,
+  DROP_TANK,
   E6_CHARGE_RANGE,
   E6_CHARGE_SPEED_SPEC,
+  ENEMIES_DROP,
   ENEMY_ROCKETS,
   ENEMY_STATS,
   FUNNEL_END_ROWS,
@@ -20,9 +23,9 @@ import {
   SPEED_SCALE,
   WINDOW_ROWS,
 } from './constants';
-import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, spawnFx } from './Fx';
+import { FX_BASE, FX_GATE, FX_HIT, FX_KILL, FX_PICKUP, spawnFx } from './Fx';
 import { poolAlloc, poolFree } from './Pool';
-import { grantDrop, rollDrop, spawnDrop } from './Powerup';
+import { grantDrop, rollDrop, spawnDrop, startTank } from './Powerup';
 import { spawnEnemyRocket } from './Projectile';
 import { holdGates } from './Wall';
 
@@ -140,8 +143,17 @@ export function damageEnemy(sim: SimState, index: number, amount: number, hitX: 
     grantDrop(sim, drop, x, y, FX_GATE);
     return true;
   }
-  const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
-  if (drop > 0) spawnDrop(sim, drop, e.x, Math.max(0, e.y));
+  if (e.type === BUBBLE_TYPE) {
+    // The bubble pops and the tank rolls out.
+    spawnFx(sim, FX_PICKUP, e.x, e.y, 0, DROP_TANK);
+    poolFree(sim.enemies, index);
+    startTank(sim);
+    return true;
+  }
+  if (ENEMIES_DROP) {
+    const drop = e.drop > 0 ? e.drop : e.type === 4 || e.type === 8 ? rollDrop(sim) : 0;
+    if (drop > 0) spawnDrop(sim, drop, e.x, Math.max(0, e.y));
+  }
   spawnFx(sim, FX_KILL, e.x, e.y, e.w, e.type);
   poolFree(sim.enemies, index);
   sim.kills++;
@@ -232,6 +244,11 @@ export function stepEnemies(sim: SimState): void {
     if (e.contact > 0) e.contact -= SIM_DT;
     if (e.y + e.h / 2 < WINDOW_ROWS) continue;
 
+    if (e.type === BUBBLE_TYPE) {
+      // A bubble that nobody opened is only a missed tank.
+      poolFree(sim.enemies, i);
+      continue;
+    }
     if (ENEMY_STATS[e.type].boss) {
       sim.phase = 'lost';
       sim.lossReason = 'boss';

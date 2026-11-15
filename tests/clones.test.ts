@@ -248,30 +248,31 @@ describe('contact trades (D12 as changed by A18 and A28)', () => {
 });
 
 describe('boxes dropped by fat rats (B4, B8, B9)', () => {
-  it('an authored drop falls from where the enemy died, faster than the march', () => {
+  it('enemies drop nothing any more, whatever the map says (A38)', () => {
     const map = mapFromRows([rowWith({ 22: 'E1-P3' }), ...gap(400), rowWith({ 0: 'E1' })]);
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
-    while (sim.powerups.live === 0 && sim.tick < 5 * SIM_HZ) run(sim, map, scratch, 1);
-    const box = sim.powerups.items.find((p) => p.active)!;
-    expect(box.kind).toBe(DROP_CLONE_10);
-    expect(box.x).toBe(23);
-    const y = box.y;
-    run(sim, map, scratch, 30);
-    expect(box.y - y).toBeCloseTo(POWERUP_SPEED * 0.5, 6);
+    while (sim.kills === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+    expect(sim.kills).toBe(1);
+    run(sim, map, scratch, SIM_HZ);
+    expect(sim.powerups.live).toBe(0);
+    expect(sim.clones).toBe(0);
   });
 
-  it('is picked up by the swarm and adds its clones', () => {
-    for (const [token, amount] of [
-      ['E1-P1', 1],
-      ['E1-P2', 3],
-      ['E1-P3', 10],
-      ['E1-P4', 50],
+  it('a box falls at POWERUP_SPEED, is picked up by the swarm and adds its clones', () => {
+    for (const [kind, amount] of [
+      [DROP_CLONE_1, 1],
+      [DROP_CLONE_1 + 1, 3],
+      [DROP_CLONE_10, 10],
+      [DROP_CLONE_50, 50],
     ] as const) {
-      const map = mapFromRows([rowWith({ 22: token }), ...gap(400), rowWith({ 0: 'E1' })]);
-      const sim = createSim(map, 1, LONE);
+      const sim = createSim(FAR, 1, LONE);
       const scratch = createScratch();
-      while (sim.clones === 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+      spawnDrop(sim, kind, sim.shooter.x, 20);
+      const box = sim.powerups.items.find((p) => p.active)!;
+      run(sim, FAR, scratch, 30);
+      expect(box.y - 20).toBeCloseTo(POWERUP_SPEED * 0.5, 6);
+      while (sim.clones === 0 && sim.tick < 10 * SIM_HZ) run(sim, FAR, scratch, 1);
       expect(sim.clones).toBe(amount);
       expect(sim.powerups.live).toBe(0);
     }

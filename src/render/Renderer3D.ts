@@ -28,7 +28,9 @@ import { cloneY, ringsFor, SLOT_X } from '../game/Clone';
 import {
   BIG_DRAW_SCALE,
   BIG_ENEMY_MIN_TYPE,
+  BIG_HEIGHT_FACTOR,
   BIG_HEIGHT_SCALE,
+  BUBBLE_TYPE,
   CAMERA_BACK,
   CAMERA_FOLLOW,
   CAMERA_GOAL_MARGIN,
@@ -468,7 +470,8 @@ export class Renderer3D implements GameView {
     this.tank = new Batch(tankGeometry(), tankMaterial, 1, false, outlineMaterial(1, 0, 0.012));
     this.tank.mesh.castShadow = true;
     // The tank waiting in its bubble, and the bubble round it.
-    this.bubbleTanks = new Batch(tankGeometry(), tankMaterial, POOL_POWERUPS);
+    // Turned side on, so it reads as a prize and not as the tank in play.
+    this.bubbleTanks = new Batch(tankGeometry().rotateY(Math.PI / 2), tankMaterial, POOL_POWERUPS);
     this.bubbles = new Batch(
       new SphereGeometry(0.5, 24, 16),
       new MeshStandardMaterial({
@@ -763,6 +766,8 @@ export class Renderer3D implements GameView {
     this.barCount = 0;
 
     this.blobs.begin();
+    this.bubbles.begin();
+    this.bubbleTanks.begin();
     this.drawSwarm(frame, x, time, dt);
     this.drawEnemies(frame, time, dt);
     this.blobs.end();
@@ -1115,6 +1120,10 @@ export class Renderer3D implements GameView {
           const type = layout.type[r * COLS + c];
           if (type === 0) continue;
           const stats = ENEMY_STATS[type];
+          if (type === BUBBLE_TYPE) {
+            this.drawBubble(c + stats.w / 2, front - stats.h / 2, stats.w, time + r, false);
+            continue;
+          }
           if (type <= 3) {
             const px = c + stats.w / 2;
             const pz = front - stats.h / 2;
@@ -1123,7 +1132,7 @@ export class Renderer3D implements GameView {
             this.blobs.add(px + 0.12 * u, 0.02, pz + 0.1 * u, u, 1, u);
           } else {
             const size = (stats.w * BIG_DRAW_SCALE) / BIG_MODEL_WIDTH;
-            this.rats[type].add(c + stats.w / 2, 0, front - stats.h / 2, size, size * BIG_HEIGHT_SCALE, size);
+            this.rats[type].add(c + stats.w / 2, 0, front - stats.h / 2, size, size * BIG_HEIGHT_SCALE * BIG_HEIGHT_FACTOR[type], size);
             this.rats[type].tint(0.62, 0.62, 0.7);
           }
         }
@@ -1143,6 +1152,12 @@ export class Renderer3D implements GameView {
         if (e.flash > 0) gate.tint(1.6, 1.6, 1.6);
         continue;
       }
+      if (e.type === BUBBLE_TYPE) {
+        // A tank bubble: the tank floats inside, and the bar shows the shots it still takes.
+        this.drawBubble(ex, ez, e.w, time + e.row, e.flash > 0);
+        if (ez + e.h / 2 > 0) this.placeBar(ex, e.w * 1.25, ez, 80, e.hp / e.maxHp, String(Math.ceil(e.hp)));
+        continue;
+      }
       const batch = this.rats[e.type];
       if (e.type <= 3) {
         // A rat that takes a hit and lives is knocked back and squashed for a moment.
@@ -1153,9 +1168,10 @@ export class Renderer3D implements GameView {
         // Big enemies stomp: a slow squash and stretch.
         const stomp = Math.sin(time * 5 + e.row);
         const size = (e.w * BIG_DRAW_SCALE) / BIG_MODEL_WIDTH;
-        batch.add(ex, 0, ez, size * (1 + 0.02 * stomp), size * BIG_HEIGHT_SCALE * (1 - 0.03 * stomp), size);
+        const tall = size * BIG_HEIGHT_SCALE * BIG_HEIGHT_FACTOR[e.type];
+        batch.add(ex, 0, ez, size * (1 + 0.02 * stomp), tall * (1 - 0.03 * stomp), size);
         this.punchPose(e, batch);
-        if (ez + e.h / 2 > 0) this.enemyBar(e, ex, ez, size * BIG_HEIGHT_SCALE * BAR_HEIGHT);
+        if (ez + e.h / 2 > 0) this.enemyBar(e, ex, ez, tall * BAR_HEIGHT);
       }
       if (e.flash > 0) batch.tint(1.9, 0.75, 0.75);
     }
@@ -1222,6 +1238,15 @@ export class Renderer3D implements GameView {
     this.placeBar(x, height, z, width, e.hp / e.maxHp, String(Math.ceil(e.hp)));
   }
 
+  /** A bubble `d` cells across with the tank floating inside it. */
+  private drawBubble(x: number, z: number, d: number, time: number, flash: boolean): void {
+    const bob = 0.03 * d * Math.sin(time * 3);
+    this.bubbleTanks.add(x, d * 0.22 + bob, z, d * 0.6, d * 0.6, d * 0.6);
+    this.bubbles.add(x, d * 0.55 + bob, z, d * 1.1, d * 1.1, d * 1.1);
+    if (flash) this.bubbles.tint(2.4, 2.4, 2.4);
+    this.blobs.add(x, 0.02, z, d * 0.9, 1, d * 0.9);
+  }
+
   /** Rockets with their smoke, the laser, and the tank waiting in its bubble. */
   private drawWeapons(frame: RenderFrame, x: number, time: number, dt: number): void {
     const { sim, alpha } = frame;
@@ -1286,19 +1311,14 @@ export class Renderer3D implements GameView {
       beam.visible = false;
     }
 
-    // Tank bubbles: the tank floats inside, and a thin bar shows how many shots are left.
-    this.bubbles.begin();
-    this.bubbleTanks.begin();
+    // Tank bubbles dropped as boxes (only with ENEMIES_DROP): the same picture, smaller.
     const boxes = sim.powerups;
     const d = TANK_BUBBLE_SIZE;
     for (let i = 0; i < boxes.high; i++) {
       const p = boxes.items[i];
       if (!p.active || p.kind !== DROP_TANK) continue;
       const z = p.prevY + (p.y - p.prevY) * alpha;
-      const bob = 0.4 * Math.sin(time * 3 + i);
-      this.bubbleTanks.add(p.x, d * 0.22 + bob, z, d * 0.6, d * 0.6, d * 0.6);
-      this.bubbles.add(p.x, d * 0.55 + bob, z, d * 1.1, d * 1.1, d * 1.1);
-      if (p.flash > 0) this.bubbles.tint(2.4, 2.4, 2.4);
+      this.drawBubble(p.x, z, d, time + i, p.flash > 0);
       this.placeBar(p.x, d * 1.3, z, 46, p.hp / TANK_BUBBLE_HP, '');
     }
     this.bubbles.end();
@@ -1375,10 +1395,10 @@ export class Renderer3D implements GameView {
       if (!b.active) continue;
       const z = b.prevY + (b.y - b.prevY) * frame.alpha;
       if (b.kind === BULLET_MINIGUN) {
-        // Owner's choice: minigun bullets are dark blue. A glow is light added to the
-        // scene and would wash the colour out, so these are plain, fatter slugs.
+        // Owner's choice: minigun bullets are red. A glow is light added to the scene
+        // and would wash the colour out, so these are plain, fatter slugs.
         this.bulletCores.add(b.x, BULLET_HEIGHT, z, 2, 1.4, 1.15);
-        this.bulletCores.tint(0.03, 0.07, 0.5);
+        this.bulletCores.tint(0.95, 0.04, 0.04);
         continue;
       }
       this.bulletCores.add(b.x, BULLET_HEIGHT, z, 1, 1, 1);

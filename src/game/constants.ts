@@ -40,11 +40,11 @@ export const MAX_RENDER_RESOLUTION = 2;
 // --- D1: speeds ----------------------------------------------------------------
 
 /**
- * Converts SPEC speed values to gu/s. Spec 10 -> 12 gu/s: a minion crosses the
- * 150 rows in play in 12.5 seconds. The plan started at 0.075; the owner
- * raised it in decisions A18 and A29, and doubled it in A31 and again in A33.
+ * Converts SPEC speed values to gu/s. Spec 10 -> 6.72 gu/s: a minion crosses the
+ * 150 rows in play in about 22 seconds. The plan started at 0.075; the owner
+ * raised it in A18, A29, A31 and A33, then asked for 44% less in A38.
  */
-export const SPEED_SCALE = 1.2;
+export const SPEED_SCALE = 1.2 * 0.56;
 /** Speed at which the row stream advances: the E1-E3 march speed. */
 export const MARCH_SPEED_SPEC = 10;
 export const MARCH_SPEED = MARCH_SPEED_SPEC * SPEED_SCALE;
@@ -67,13 +67,23 @@ export interface EnemyStats {
  * four times their HP. It applies to every big enemy, E4 to E8.
  */
 export const BIG_HP_FACTOR = 4;
+/**
+ * The tank bubble (A38). It is placed on a map like an enemy and marches down the
+ * lane at the minions' speed. Shots open it and the tank rolls out. If it reaches
+ * the swarm unopened it runs over the cats in its way, once. Its footprint has
+ * four times the area of the bubble that fat rats used to drop.
+ */
+export const BUBBLE_TYPE = 10;
+export const BUBBLE_DEFAULT_HP = 50;
 
 /**
- * Speed of the panels on the rails, as a SPEC speed value. 10 is the march speed
- * of the minions, so a panel stays level with the row it was written in. A
- * larger value makes the panels run ahead of the rats.
+ * Speed of the panels on the rails, in cells a second (A38): 44% faster than the
+ * 12 they had, while the rats were slowed. A panel therefore runs ahead of the
+ * row it was written in.
  */
-export const RAIL_ITEM_SPEED_SPEC = MARCH_SPEED_SPEC;
+export const RAIL_ITEM_SPEED = 12 * 1.44;
+/** The same as a SPEC speed value, for the enemy table. */
+export const RAIL_ITEM_SPEED_SPEC = RAIL_ITEM_SPEED / SPEED_SCALE;
 
 /** Indexed by enemy type 1..8. Index 0 is unused. */
 export const ENEMY_STATS: readonly EnemyStats[] = [
@@ -88,6 +98,7 @@ export const ENEMY_STATS: readonly EnemyStats[] = [
   // E8 would be 60 cells wide at twice its SPEC size; it is as wide as the lane instead.
   { w: cells(30), h: cells(30), hp: 10000 * BIG_HP_FACTOR, speedSpec: 5, boss: true }, // E8 robo rat
   { w: cells(8), h: cells(2), hp: 1, speedSpec: RAIL_ITEM_SPEED_SPEC, boss: false }, // rail gate (GATE_TYPE)
+  { w: cells(10), h: cells(10), hp: BUBBLE_DEFAULT_HP, speedSpec: 10, boss: false }, // tank bubble (BUBBLE_TYPE)
 ];
 
 export const ENEMY_TYPE_COUNT = 8;
@@ -184,6 +195,12 @@ export const ENEMY_ROCKETS: readonly (EnemyRocketStats | null)[] = [
   { interval: 4, hp: 30, speed: 30, aoe: 20 * UNIT },
   { interval: 2, hp: 24, speed: 40, aoe: 20 * UNIT },
 ];
+/**
+ * A38: enemy rockets cannot be shot down any more. The only defence is to be out
+ * of their way: a rocket flies straight down the lane from the rat that fired it.
+ * Set to true to bring back A35, where shots wore a rocket down.
+ */
+export const ENEMY_ROCKETS_SHOOTABLE = false;
 /** Half the width of an enemy rocket as a target for the swarm's shots. */
 export const ENEMY_ROCKET_HALF_WIDTH = 2 * UNIT;
 
@@ -195,7 +212,9 @@ export const ENEMY_ROCKET_HALF_WIDTH = 2 * UNIT;
  * two rocket bosses punch too.
  */
 export const SMASH_INTERVAL = 0.5;
-export const PUNCH_KILLS: readonly number[] = [0, 0, 0, 0, 10, 15, 30, 15, 30];
+/** A38: the owner asked for four times the kills of every punch. */
+export const PUNCH_FACTOR = 4;
+export const PUNCH_KILLS: readonly number[] = [0, 0, 0, 0, 10, 15, 30, 15, 30].map((kills) => kills * PUNCH_FACTOR);
 /** E6 charges at this speed while its front is within this distance of the swarm. */
 export const E6_CHARGE_RANGE = 12 * UNIT;
 export const E6_CHARGE_SPEED_SPEC = 20;
@@ -214,8 +233,8 @@ export const SHOOTER_Y = WINDOW_ROWS - SHOOTER_ROWS_ABOVE_BASE;
 export const SHOOTER_HALF_WIDTH = 0.5 * UNIT;
 export const SHOOTER_START_X = COLS / 2;
 
-/** Base fire rate in shots per second. */
-export const FIRE_RATE = 2;
+/** Base fire rate in shots per second: the SPEC's 2, less 18% (A38). */
+export const FIRE_RATE = 2 * 0.82;
 /** Clones fire at this fraction of the base rate. */
 export const CLONE_FIRE_RATE_FACTOR = 0.5;
 export const CLONE_CAP = 100;
@@ -223,7 +242,8 @@ export const CLONE_CAP = 100;
 export const RING_SLOTS_PER_RING = 6;
 export const RING_SPACING = UNIT;
 
-export const BULLET_SPEED = 80;
+/** A38: 18% slower than the 80 of A31. */
+export const BULLET_SPEED = 80 * 0.82;
 export const BULLET_DAMAGE = 1;
 /** Bullets leave the muzzle this far above the shooter centre. */
 export const MUZZLE_OFFSET = 0.6 * UNIT;
@@ -340,6 +360,11 @@ export const DROP_WEIGHTS = {
   laser: 10,
   tank: 5,
 } as const;
+/**
+ * A38: enemies drop nothing when they die. Rewards come from the rails, and the
+ * tank from its bubble. Set to true to bring back the drops of SPEC 7.4.
+ */
+export const ENEMIES_DROP = false;
 /** D12: damage an enemy takes when it trades with a cat. */
 export const CONTACT_DAMAGE = 1;
 /** B8: powerup boxes fall twice as fast as the army marches, so they are not buried in it. */
@@ -425,6 +450,12 @@ export const SHOOTER_DRAW_SCALE = 1.62 * UNIT;
 export const BIG_DRAW_SCALE = 1.05;
 /** Big enemies are squat: their height is this fraction of their width scale. */
 export const BIG_HEIGHT_SCALE = 0.66;
+/**
+ * A38: the big rats grow from one to the next. The fat rat and the robo rat keep
+ * their size; the charger and the boss sniper stand 44% taller. Only the height
+ * changes: the lane has no room for a wider footprint. Indexed by enemy type.
+ */
+export const BIG_HEIGHT_FACTOR: readonly number[] = [1, 1, 1, 1, 1, 1, 1.44, 1.44, 1];
 /** Rows beyond the top of the window that are drawn as a look-ahead (decision A9). */
 export const PREVIEW_ROWS = 22;
 /** Real shadow map for big enemies and walls. Minions always use contact-shadow discs. */

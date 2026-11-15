@@ -7,6 +7,7 @@ import {
   CAT_RADIUS,
   DROP_TANK,
   ENEMY_ROCKET_HALF_WIDTH,
+  ENEMY_ROCKETS_SHOOTABLE,
   type EnemyRocketStats,
   FIRE_RATE,
   GATE_TYPE,
@@ -90,6 +91,7 @@ export function spawnEnemyRocket(sim: SimState, x: number, y: number, stats: Ene
 
 /** Index of the enemy rocket a shot at (x, y) would hit, or -1. */
 function enemyRocketAt(sim: SimState, x: number, y: number): number {
+  if (!ENEMY_ROCKETS_SHOOTABLE) return -1;
   const { items, high } = sim.rockets;
   for (let i = 0; i < high; i++) {
     const r = items[i];
@@ -165,7 +167,7 @@ export function stepBullets(sim: SimState, hash: SpatialHash): void {
   const { items } = sim.bullets;
   const step = BULLET_SPEED * SIM_DT;
   const bubbles = anyBubble(sim);
-  const threats = sim.rockets.items.some((r) => r.active && r.kind === ROCKET_ENEMY);
+  const threats = ENEMY_ROCKETS_SHOOTABLE && sim.rockets.items.some((r) => r.active && r.kind === ROCKET_ENEMY);
   for (let i = sim.bullets.high - 1; i >= 0; i--) {
     const b = items[i];
     if (!b.active) continue;
@@ -239,7 +241,7 @@ export function explode(
   const rockets = sim.rockets;
   for (let i = 0; i < rockets.high; i++) {
     const r = rockets.items[i];
-    if (!r.active || r.kind !== ROCKET_ENEMY) continue;
+    if (!ENEMY_ROCKETS_SHOOTABLE || !r.active || r.kind !== ROCKET_ENEMY) continue;
     if (Math.abs(r.x - x) < half + ENEMY_ROCKET_HALF_WIDTH && Math.abs(r.y - y) < half + ENEMY_ROCKET_HALF_WIDTH) {
       damageEnemyRocket(sim, i, damage);
     }

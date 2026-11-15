@@ -239,16 +239,13 @@ describe('enemy rockets (SPEC 7.2)', () => {
     expect(sim.fx.items.some((f) => f.active && f.kind === FX_BLAST && f.tag === 2)).toBe(true);
   });
 
-  it('a swarm under it shoots it down, and it bursts harmlessly', () => {
+  it('cannot be shot down: a swarm that stays in its line loses the cats in the blast (A38)', () => {
     const sim = createSim(FAT, 1, { startClones: 40 });
     const scratch = createScratch();
-    let shotDown = false;
-    while (sim.tick < 7 * SIM_HZ && sim.phase === 'playing') {
-      run(sim, FAT, scratch, 1);
-      if (sim.fx.items.some((f) => f.active && f.kind === FX_BLAST && f.tag === 3)) shotDown = true;
-    }
+    while (sim.clones === 40 && sim.tick < 12 * SIM_HZ && sim.phase === 'playing') run(sim, FAT, scratch, 1);
     expect(sim.enemyRocketsFired).toBe(1);
-    expect(shotDown).toBe(true);
-    expect(sim.clones).toBe(40);
+    expect(sim.clones).toBeLessThan(40);
+    expect(sim.fx.items.some((f) => f.active && f.kind === FX_BLAST && f.tag === 3)).toBe(false);
+    expect(sim.fx.items.some((f) => f.active && f.kind === FX_BLAST && f.tag === 2)).toBe(true);
   });
 });

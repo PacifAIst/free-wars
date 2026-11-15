@@ -85,6 +85,8 @@ function build(n) {
     gates(mid + 8, 'P3', w % 2 === 1 ? 'P4' : 'P3');
     // Now and then a bomb follows on one rail: touching it costs 18 cats.
     if (n >= 2 && (n + w) % 3 === 0) gates(mid + 20, w % 2 === 0 ? 'P9' : null, w % 2 === 0 ? null : 'P9');
+    // Some maps send a tank bubble down the lane after their second wave: shoot it open for the tank.
+    if (step % 4 === 1 && w === 1) row(mid + 24)[12] = `TB-${40 + district * 20}`;
     r += spacing + ranks * 2;
   }
 

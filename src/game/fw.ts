@@ -9,7 +9,8 @@
 //   0,L,WALL hp=150  a brick wall across the left rail (row 0 only)
 //   dark: yes        a night map
 //   112,0,E1         row 112, column 0: a minion
-//   230,14,E4 hp=320 drop=+50
+//   230,14,E4 hp=320
+//   300,12,TB hp=80  a tank bubble: shoot it open for the tank
 //
 // Rows count from 0, the first to reach the swarm. A lane column is 0 to 43
 // and names the left cell of the unit; L and R are the rails. Lines that
@@ -21,13 +22,13 @@
 import { formatIssue, parseMap } from '../parsers/markdownMapParser';
 import { cellSpec } from '../parsers/tokens';
 import type { MapData } from '../types';
-import { COLS, DROP_CODE_MAX, ENEMY_STATS, ENEMY_TYPE_COUNT, GATE_TYPE, WALL_MAX_HP } from './constants';
+import { BUBBLE_TYPE, COLS, DARK_EVERY, DROP_CODE_MAX, ENEMY_STATS, GATE_TYPE, WALL_MAX_HP } from './constants';
 
 export interface FwEnemy {
   row: number;
   /** Left cell of its footprint. */
   col: number;
-  /** 1 to 8, or 0 for a random minion (`ER`). */
+  /** 1 to 8, 0 for a random minion (`ER`), or BUBBLE_TYPE for a tank bubble (`TB`). */
   type: number;
   /** HP it is given, or 0 for the HP of its type. */
   hp: number;
@@ -117,7 +118,7 @@ export function fwRows(map: FwMap): number {
   return rows;
 }
 
-const enemyToken = (e: FwEnemy): string => (e.type === 0 ? 'ER' : `E${e.type}`);
+const enemyToken = (e: FwEnemy): string => (e.type === 0 ? 'ER' : e.type === BUBBLE_TYPE ? 'TB' : `E${e.type}`);
 
 /** The text of a .fw file. */
 export function formatFw(map: FwMap): string {
@@ -192,10 +193,9 @@ export function parseFw(text: string): FwMap | null {
     const col = wholeNumber(column);
     if (col < 0 || col >= COLS) return null;
     const [token, ...options] = parts[2].toUpperCase().split(/\s+/);
-    const kind = /^E([1-8R])$/.exec(token);
+    const kind = /^(?:E([1-8R])|TB)$/.exec(token);
     if (!kind) return null;
-    const type = kind[1] === 'R' ? 0 : Number(kind[1]);
-    if (type > ENEMY_TYPE_COUNT) return null;
+    const type = kind[1] === undefined ? BUBBLE_TYPE : kind[1] === 'R' ? 0 : Number(kind[1]);
     const enemy: FwEnemy = { row, col, type, hp: 0, drop: 0 };
     for (const option of options) {
       const hp = /^HP=(\d{1,7})$/.exec(option);
@@ -244,6 +244,54 @@ export function fwToMapData(map: FwMap, id = 'custom'): MapData | null {
     return null;
   }
   return result.map;
+}
+
+/** One line of a .fw file that places something: `row,column,what`. */
+const FW_ENTRY = /^\s*\d+\s*,\s*(?:L|R|\d+)\s*,\s*\S/i;
+
+/**
+ * Reads a map file whatever it is called and however it was put together:
+ *
+ *  - a .fw file from the map editor;
+ *  - a Markdown map with its grid of tab-separated cells;
+ *  - .fw lines pasted into a Markdown map in place of its grid. The name, the
+ *    night setting and the walls are then taken from the Markdown header lines
+ *    (`- name:`, `- dark:`, `- wall-left:`, `- wall-right:`) unless the .fw
+ *    lines give them.
+ *
+ * Returns the map with the given id, or a message saying what is wrong.
+ */
+export function readMapText(text: string, id: string): { map: MapData } | { error: string } {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  const isFw = lines.some((line) => line.trim().toUpperCase() === FW_HEADER);
+  const entries = lines.filter((line) => FW_ENTRY.test(line));
+  if (isFw || entries.length > 0) {
+    let source = text;
+    if (!isFw) {
+      const header = (key: string): string | undefined => {
+        const found = lines.map((line) => new RegExp(`^\\s*[-*]?\\s*${key}\\s*:\\s*(.*)$`, 'i').exec(line)).find((m) => m !== null);
+        return found ? found[1].trim() : undefined;
+      };
+      const built = [FW_HEADER, `name: ${header('name') ?? 'My map'}`];
+      const dark = header('dark');
+      if (dark !== undefined) built.push(`dark: ${dark}`);
+      const has = (side: string): boolean => entries.some((line) => new RegExp(`^\\s*0\\s*,\\s*${side}\\s*,\\s*WALL`, 'i').test(line));
+      for (const [key, side] of [['wall-left', 'L'], ['wall-right', 'R']] as const) {
+        const hp = header(key);
+        if (hp !== undefined && /^[1-9]\d*$/.test(hp) && !has(side)) built.push(`0,${side},WALL hp=${hp}`);
+      }
+      source = [...built, ...entries].join('\n');
+    }
+    const parsed = parseFw(source);
+    if (!parsed) return { error: 'the lines "row,column,what" are not all valid' };
+    // A map that does not say is dark when it is a boss map, like a Markdown one.
+    if (!/^\s*[-*]?\s*dark\s*:/im.test(text) && /^[1-9]\d*$/.test(id) && Number(id) % DARK_EVERY === 0) parsed.dark = true;
+    const map = fwToMapData(parsed, id);
+    return map ? { map } : { error: 'there is nothing on the map, or the game refused it' };
+  }
+  const result = parseMap(text);
+  if (!result.ok) return { error: result.errors.map(formatIssue).join('; ') };
+  return { map: { ...result.map, id } };
 }
 
 /** Turns a map the game plays, such as a built-in one, into an editor map. */

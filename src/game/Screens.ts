@@ -65,6 +65,7 @@ export class Screens {
   private readonly notice: HTMLDivElement;
   private readonly lossReason: HTMLDivElement;
   private readonly clearButton: HTMLButtonElement;
+  private readonly nextButton: HTMLButtonElement;
   private readonly popup: HTMLDivElement;
   private readonly popupTitle: HTMLDivElement;
   private readonly popupBody: HTMLDivElement;
@@ -131,7 +132,8 @@ export class Screens {
     // --- Victory ---
     const win = panel('win');
     make('div', 'ui-title', win, 'VICTORY!');
-    this.button(win, 'CONTINUE', 'ui-button ui-primary', () => this.game.continueAfterWin());
+    this.nextButton = this.button(win, 'NEXT MAP', 'ui-button ui-primary', () => this.game.nextLevel());
+    this.button(win, 'MAP SELECT', 'ui-button ui-small', () => this.game.continueAfterWin());
     this.button(win, 'MAIN MENU', 'ui-button ui-small', () => this.game.toMenu());
 
     // --- The last map is won ---
@@ -294,6 +296,9 @@ export class Screens {
     } else if (want === 'levels') {
       this.gridUnlocked = -1;
       this.paintGrid();
+    } else if (want === 'win') {
+      // A map from the editor has no next map: the button goes back instead.
+      this.nextButton.textContent = game.nextLevelId() === null ? 'CONTINUE' : 'NEXT MAP';
     } else if (want === 'lose') {
       this.lossReason.textContent = LOSS_TEXT[game.sim.lossReason] ?? '';
     }

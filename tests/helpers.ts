@@ -1,5 +1,5 @@
 import { formationRadius } from '../src/game/Clone';
-import { BIG_ENEMY_MIN_TYPE, CLONE_BOX_AMOUNTS, COLS, DROP_BOMB, DROP_CLONE_1, GATE_TYPE, SHOOTER_Y, UNIT } from '../src/game/constants';
+import { BIG_ENEMY_MIN_TYPE, CLONE_BOX_AMOUNTS, COLS, DROP_BOMB, ENEMY_ROCKETS, DROP_CLONE_1, GATE_TYPE, SHOOTER_Y, UNIT } from '../src/game/constants';
 import { ROCKET_ENEMY } from '../src/game/Projectile';
 import { createScratch, type SimScratch, stepSim } from '../src/game/Sim';
 import type { SimOptions } from '../src/game/World';
@@ -59,7 +59,7 @@ export const gatesOf = (sim: SimState): Enemy[] => activeEnemies(sim).filter((e)
 /**
  * A simple player, used to check that a level can be won, not to play well.
  *
- *  0. An enemy rocket on its way: stand under it and shoot it down.
+ *  0. An enemy rocket on its way, or a rat that fires them often: stand clear of its line.
  *  1. Rats close to the swarm, and any big rat in the window, come first: sweep them.
  *  2. Otherwise catch a falling box, or get under a tank bubble to shoot it open.
  *  3. Otherwise walk onto the rail of a panel that will arrive before any rat
@@ -85,7 +85,13 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     if (e.active && e.type >= BIG_ENEMY_MIN_TYPE && e.type !== GATE_TYPE && e.y + e.h / 2 > 0) big = true;
   }
   const close = big || danger > SHOOTER_Y - radius - BOT_CLOSE_ROWS;
-  // An enemy rocket on its way: stand under it and shoot it down.
+  // A rat that fires rockets every few seconds is fought from beside its line of fire all the time.
+  let sniper: Enemy | null = null;
+  for (const e of sim.enemies.items) {
+    const launcher = e.active ? ENEMY_ROCKETS[e.type] : null;
+    if (launcher && launcher.interval <= 4 && e.y + e.h / 2 > 0) sniper = e;
+  }
+  // An enemy rocket on its way: get out of its line.
   let rocket: { x: number; y: number } | null = null;
   for (const r of sim.rockets.items) {
     if (r.active && r.kind === ROCKET_ENEMY && (rocket === null || r.y > rocket.y)) rocket = r;
@@ -116,8 +122,12 @@ export function botInput(sim: SimState, out: SimInput): SimInput {
     }
   }
 
-  if (rocket !== null) {
-    goal = rocket.x;
+  if (rocket !== null || sniper !== null) {
+    // Stand clear of the line the rockets fly down, on the side the swarm is already on.
+    const line = rocket !== null ? rocket.x : (sniper as Enemy).x;
+    const clear = radius + 6;
+    goal = x <= line ? line - clear : line + clear;
+    if (goal < -6) goal = line + clear;
   } else if (!close && box !== null) {
     goal = box.x;
   } else if (!close && gate !== null) {

@@ -8,7 +8,7 @@
 // or from one of the 44 built-in maps. Files are read in the browser and go
 // nowhere. Styles live in index.html.
 
-import { BUILT_IN_LEVELS, COLS, WALL_DEFAULT_HP, WALL_MAX_HP } from '../game/constants';
+import { BUBBLE_DEFAULT_HP, BUBBLE_TYPE, BUILT_IN_LEVELS, COLS, WALL_DEFAULT_HP, WALL_MAX_HP } from '../game/constants';
 import {
   emptyFwMap,
   enemySize,
@@ -26,9 +26,9 @@ import {
 } from '../game/fw';
 import type { Game } from '../game/Game';
 import type { MapSource } from '../game/maps';
-import { brickCanvas, ITEMS, itemCanvas } from '../render/icons';
+import { brickCanvas, drawItem, ITEMS, itemCanvas } from '../render/icons';
 
-type Tool = { kind: 'erase' } | { kind: 'enemy'; type: number } | { kind: 'item'; drop: number } | { kind: 'wall' };
+type Tool = { kind: 'erase' } | { kind: 'enemy'; type: number } | { kind: 'item'; drop: number } | { kind: 'wall' } | { kind: 'hp' };
 
 /** A place on the grid: a row, and either a rail (`side` 0 or 1) or a lane column (`side` -1). */
 interface Spot {
@@ -94,6 +94,53 @@ function enemyPicture(type: number, size: number): HTMLCanvasElement {
   return canvas;
 }
 
+/** A tank in its bubble. */
+function bubblePicture(size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+  drawBubble(g, size / 2, size / 2, size * 0.46);
+  return canvas;
+}
+
+function drawBubble(g: CanvasRenderingContext2D, cx: number, cy: number, radius: number): void {
+  g.fillStyle = 'rgba(168, 236, 255, 0.5)';
+  g.strokeStyle = '#d8f6ff';
+  g.lineWidth = Math.max(1.5, radius * 0.08);
+  g.beginPath();
+  g.arc(cx, cy, radius, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  drawItem(g, 8, cx, cy + radius * 0.08, radius * 1.3, radius * 0.9);
+}
+
+/** The tool that sets HP: a green bar with the letters HP. */
+function hpPicture(size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+  g.lineWidth = size * 0.07;
+  g.strokeStyle = INK;
+  g.fillStyle = '#2a2757';
+  g.beginPath();
+  g.roundRect(size * 0.08, size * 0.3, size * 0.84, size * 0.4, size * 0.14);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#5fd66a';
+  g.beginPath();
+  g.roundRect(size * 0.12, size * 0.34, size * 0.5, size * 0.32, size * 0.1);
+  g.fill();
+  g.font = `900 ${Math.round(size * 0.3)}px "Trebuchet MS", system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  g.lineWidth = size * 0.09;
+  g.strokeText('HP', size / 2, size * 0.52);
+  g.fillStyle = '#ffffff';
+  g.fillText('HP', size / 2, size * 0.52);
+  return canvas;
+}
+
 /** The rubber. */
 function rubberPicture(size: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -146,6 +193,8 @@ export class Editor {
   private lastPlaced = '';
   private drawQueued = false;
   private isOpen = false;
+  /** The built-in map this one was started from, if any: it names the saved file. */
+  private templateId: string | null = null;
 
   constructor(
     host: HTMLElement,
@@ -199,19 +248,16 @@ export class Editor {
       this.map.dark = this.darkBox.checked;
       this.saveDraft();
     });
-    // HP of the brick walls: of the next one placed, and of those already there.
-    const hpLabel = make('label', 'ed-check', bar, 'WALL HP ');
+    // HP given to the next wall or tank bubble placed, and by the SET HP tool to whatever it is pressed on.
+    const hpLabel = make('label', 'ed-check', bar, 'HP ');
+    hpLabel.title = 'HP of the next wall or tank bubble you place. Pick the HP tool to give this HP to a wall, a bubble or an enemy already on the map.';
     this.wallHpInput = make('input', 'ed-number', hpLabel);
     this.wallHpInput.type = 'number';
     this.wallHpInput.min = '1';
     this.wallHpInput.max = String(WALL_MAX_HP);
     this.wallHpInput.value = String(WALL_DEFAULT_HP);
     this.wallHpInput.addEventListener('change', () => {
-      const hp = this.wallHp();
-      this.wallHpInput.value = String(hp);
-      this.map.walls = [this.map.walls[0] > 0 ? hp : 0, this.map.walls[1] > 0 ? hp : 0];
-      this.saveDraft();
-      this.queueDraw();
+      this.wallHpInput.value = String(this.wallHp());
     });
     this.button(bar, 'SAVE .FW', () => this.download()).classList.add('ed-strong');
     this.button(bar, 'TEST', () => this.test()).classList.add('ed-strong');
@@ -226,6 +272,8 @@ export class Editor {
       this.toolButton(palette, { kind: 'enemy', type }, enemyPicture(type, 40), `${ENEMY_NAMES[type]} (E${type}), ${w} by ${h} cells`);
     }
     this.toolButton(palette, { kind: 'enemy', type: 0 }, enemyPicture(0, 40), 'Random minion (ER)');
+    this.toolButton(palette, { kind: 'enemy', type: BUBBLE_TYPE }, bubblePicture(40), 'Tank bubble (TB): comes down the lane like an enemy. Shoot it open for the tank; unopened, it runs over the cats in its way. It gets the HP in the HP box');
+    this.toolButton(palette, { kind: 'hp' }, hpPicture(40), 'Set HP: press on a wall, a tank bubble or an enemy to give it the HP in the HP box');
     this.toolButton(palette, { kind: 'wall' }, brickCanvas(80, 40), 'Brick wall: drop it on a rail. It stands at the start of the map and holds the items of that rail until it is shot down').classList.add('ed-wide');
     ITEMS.forEach((item, drop) => {
       this.toolButton(palette, { kind: 'item', drop }, itemCanvas(drop, 80, 40), `${item.text === '?' ? 'Surprise' : item.text}: a rail item`).classList.add('ed-wide');
@@ -330,8 +378,6 @@ export class Editor {
   private syncControls(): void {
     this.nameInput.value = this.map.name;
     this.darkBox.checked = this.map.dark;
-    const hp = Math.max(this.map.walls[0], this.map.walls[1]);
-    if (hp > 0) this.wallHpInput.value = String(hp);
   }
 
   // --- Opening, closing, loading, saving ---------------------------------------------
@@ -361,7 +407,8 @@ export class Editor {
     if (this.testing && this.game.state === 'MENU') this.show();
   }
 
-  private load(map: FwMap, note: string): void {
+  private load(map: FwMap, note: string, templateId: string | null = null): void {
+    this.templateId = templateId;
     this.map = map;
     this.syncControls();
     this.scroller.scrollTop = 0;
@@ -378,7 +425,7 @@ export class Editor {
 
   private loadTemplate(id: string): void {
     this.maps.load(id).then(
-      (data) => this.load(mapDataToFw(data), `Map ${id} loaded as a template.`),
+      (data) => this.load(mapDataToFw(data), `Map ${id} loaded as a template.`, id),
       () => this.say(`Map ${id} could not be loaded.`),
     );
   }
@@ -398,13 +445,19 @@ export class Editor {
       this.say('The map is empty.');
       return;
     }
-    const name = (this.map.name.trim() || 'map').replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '-') || 'map';
+    // A map started from built-in map n is saved as n.fw, ready to take that map's place.
+    const own = (this.map.name.trim() || 'map').replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '-') || 'map';
+    const name = this.templateId ?? own;
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([formatFw(this.map)], { type: 'text/plain' }));
     link.download = `${name}.fw`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    this.say(`Saved ${name}.fw. ${this.summary()}`);
+    this.say(
+      this.templateId
+        ? `Saved ${name}.fw. Put it in the folder public/maps to replace map ${name}, then run deploy.ps1.`
+        : `Saved ${name}.fw. ${this.summary()}`,
+    );
   }
 
   private test(): void {
@@ -489,6 +542,21 @@ export class Editor {
       this.queueDraw();
       return;
     }
+    // The HP tool gives the HP in the box to the wall, bubble or enemy under the pointer.
+    if (tool.kind === 'hp') {
+      const hp = this.wallHp();
+      if (spot.top) {
+        if (side >= 0 && map.walls[side] > 0) map.walls[side] = hp;
+      } else if (side < 0) {
+        const target = map.enemies.find((e) => {
+          const { w, h } = enemySize(e.type);
+          return col >= e.col && col < e.col + w && row >= e.row && row < e.row + h;
+        });
+        if (target) target.hp = hp;
+      }
+      this.queueDraw();
+      return;
+    }
     // Nothing else can stand in the strip kept for the walls.
     if (spot.top) return;
 
@@ -511,7 +579,8 @@ export class Editor {
       const key = `e${left}:${top}`;
       if (key === this.lastPlaced) return;
       this.lastPlaced = key;
-      placeEnemy(map, { row: top, col: left, type: tool.type, hp: 0, drop: 0 });
+      // A tank bubble is given the HP in the HP box; a rat keeps the HP of its kind.
+      placeEnemy(map, { row: top, col: left, type: tool.type, hp: tool.type === BUBBLE_TYPE ? this.wallHp() : 0, drop: 0 });
     }
     this.queueDraw();
   }
@@ -599,6 +668,17 @@ export class Editor {
       const top = y(e.row);
       const width = w * cell;
       const depth = h * cell;
+      if (e.type === BUBBLE_TYPE) {
+        drawBubble(g, x + width / 2, top + depth / 2, width / 2 - 1);
+        g.font = `900 ${Math.max(9, width * 0.13)}px "Trebuchet MS", system-ui, sans-serif`;
+        g.lineWidth = 3;
+        g.strokeStyle = INK;
+        const label = `${e.hp > 0 ? e.hp : BUBBLE_DEFAULT_HP} HP`;
+        g.strokeText(label, x + width / 2, top + depth * 0.82);
+        g.fillStyle = '#ffffff';
+        g.fillText(label, x + width / 2, top + depth * 0.82);
+        continue;
+      }
       g.fillStyle = ENEMY_COLORS[e.type];
       g.strokeStyle = INK;
       g.lineWidth = Math.max(1, cell * 0.16);
@@ -615,7 +695,7 @@ export class Editor {
       g.strokeText(text, x + width / 2, top + depth / 2);
       g.fillStyle = '#ffffff';
       g.fillText(text, x + width / 2, top + depth / 2);
-      const extra = `${e.hp > 0 ? `${e.hp} HP ` : ''}${e.drop > 0 ? `drops ${ITEMS[e.drop].text}` : ''}`.trim();
+      const extra = e.hp > 0 ? `${e.hp} HP` : '';
       if (extra !== '') {
         g.font = `700 ${Math.max(9, size * 0.42)}px system-ui, sans-serif`;
         g.fillText(extra, x + width / 2, top + depth / 2 + size * 0.8);

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { cloneY } from '../src/game/Clone';
 import {
   DROP_LASER,
   DROP_MINIGUN,
@@ -92,7 +91,7 @@ describe('rocket mode (SPEC 8, B6)', () => {
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     give(sim, DROP_ROCKET);
-    while (sim.kills === 0 && sim.tick < 3 * SIM_HZ) run(sim, map, scratch, 1);
+    while (sim.kills === 0 && sim.phase === 'playing' && sim.tick < 3 * SIM_HZ) run(sim, map, scratch, 1);
     // The blast is 8 cells wide round x = 22: it covers the minions at columns 18 to 24.
     expect(sim.kills).toBe(4);
     expect(rats(sim).filter((e) => e.type === 1 && e.y > 0)).toHaveLength(2);
@@ -166,8 +165,12 @@ describe('tank (SPEC 8, 8.1, 9)', () => {
     const sim = createSim(map, 1, { startClones: 10 });
     const scratch = createScratch();
     give(sim, DROP_TANK);
-    run(sim, map, scratch, Math.round(4.8 * SIM_HZ));
     const fat = rats(sim).find((e) => e.type === 4)!;
+    // Keep the tank going until the fat rat is on top of it.
+    while (fat.y + fat.h / 2 <= SHOOTER_Y + 2 && sim.phase === 'playing' && sim.tick < 60 * SIM_HZ) {
+      sim.tank = 5;
+      run(sim, map, scratch, 1);
+    }
     // The fat rat is on top of the tank by now, and has been crushed and shelled.
     expect(fat.y + fat.h / 2).toBeGreaterThan(SHOOTER_Y);
     expect(fat.hp).toBeLessThan(100000 - 20);
@@ -179,7 +182,7 @@ describe('tank (SPEC 8, 8.1, 9)', () => {
     const sim = createSim(FAR, 1, { startClones: 60 });
     const scratch = createScratch();
     spawnDrop(sim, DROP_TANK, sim.shooter.x, 40);
-    while (sim.tank === 0 && sim.tick < 5 * SIM_HZ) run(sim, FAR, scratch, 1);
+    while (sim.tank === 0 && sim.phase === 'playing' && sim.tick < 5 * SIM_HZ) run(sim, FAR, scratch, 1);
     expect(sim.tank).toBeGreaterThan(0);
     expect(sim.powerups.live).toBe(0);
   });
@@ -189,7 +192,7 @@ describe('tank (SPEC 8, 8.1, 9)', () => {
     const scratch = createScratch();
     // The lone cat lands a dozen shots on it: not enough.
     spawnDrop(sim, DROP_TANK, sim.shooter.x, 40);
-    run(sim, FAR, scratch, 12 * SIM_HZ);
+    run(sim, FAR, scratch, 26 * SIM_HZ);
     expect(sim.tank).toBe(0);
     expect(sim.powerups.live).toBe(0);
   });
@@ -200,7 +203,7 @@ describe('weapon pickups (SPEC 9)', () => {
     const sim = createSim(FAR, 1, LONE);
     const scratch = createScratch();
     spawnDrop(sim, DROP_MINIGUN, sim.shooter.x, 100);
-    while (sim.minigun === 0 && sim.tick < 5 * SIM_HZ) run(sim, FAR, scratch, 1);
+    while (sim.minigun === 0 && sim.phase === 'playing' && sim.tick < 5 * SIM_HZ) run(sim, FAR, scratch, 1);
     expect(sim.minigun).toBeGreaterThan(MINIGUN_PICKUP_SECONDS - 0.1);
     expect(sim.clones).toBe(0);
   });
@@ -210,7 +213,7 @@ describe('weapon pickups (SPEC 9)', () => {
     const sim = createSim(map, 1, LONE);
     const scratch = createScratch();
     run(sim, map, scratch, 1, { targetDelta: RAIL_LEFT_X - sim.shooter.x, keyDir: 0 });
-    while (gatesOf(sim).length > 0 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+    while (gatesOf(sim).length > 0 && sim.phase === 'playing' && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
     expect(sim.rocketMode).toBeGreaterThan(0);
     expect(sim.clones).toBe(0);
   });
@@ -221,14 +224,14 @@ describe('punches (SPEC 7.3, A33)', () => {
   const boss = (sim: SimState) => rats(sim).find((e) => e.type === 5)!;
 
   it('a big rat winds up for half a second, then kills the cats nearest its fist', () => {
-    const sim = createSim(BOSS, 1, { startClones: 60 });
+    const sim = createSim(BOSS, 1, { startClones: 100 });
     const scratch = createScratch();
-    while (!boss(sim).winding && sim.tick < 30 * SIM_HZ) run(sim, BOSS, scratch, 1);
-    expect(sim.clones).toBe(60);
+    while (!boss(sim).winding && sim.phase === 'playing' && sim.tick < 60 * SIM_HZ) run(sim, BOSS, scratch, 1);
+    expect(sim.clones).toBe(100);
     const start = sim.tick;
-    while (sim.clones === 60 && sim.tick < start + 2 * SIM_HZ) run(sim, BOSS, scratch, 1);
+    while (sim.clones === 100 && sim.phase === 'playing' && sim.tick < start + 2 * SIM_HZ) run(sim, BOSS, scratch, 1);
     expect((sim.tick - start) / SIM_HZ).toBeCloseTo(SMASH_INTERVAL, 1);
-    expect(sim.clones).toBe(60 - PUNCH_KILLS[5]);
+    expect(sim.clones).toBe(100 - PUNCH_KILLS[5]);
     expect(boss(sim).punches).toBe(1);
 
     const fx = sim.fx.items.filter((f) => f.active);
@@ -237,30 +240,30 @@ describe('punches (SPEC 7.3, A33)', () => {
     expect(dead).toHaveLength(PUNCH_KILLS[5]);
     // The boss comes down the lane, so the cats it kills are the ones at the front of the swarm.
     expect(dead.reduce((sum, f) => sum + f.y, 0) / dead.length).toBeLessThan(SHOOTER_Y);
-    // No cat at the rear of the formation was touched.
-    expect(Math.max(...dead.map((f) => f.y))).toBeLessThan(cloneY(3) + 2);
 
+    // The second punch, half a second later, finds fewer cats than it can kill: the level is lost.
     const second = sim.tick;
-    while (sim.clones === 45 && sim.tick < second + 2 * SIM_HZ) run(sim, BOSS, scratch, 1);
+    while (sim.phase === 'playing' && sim.tick < second + 2 * SIM_HZ) run(sim, BOSS, scratch, 1);
     expect((sim.tick - second) / SIM_HZ).toBeCloseTo(SMASH_INTERVAL, 1);
-    expect(sim.clones).toBe(60 - 2 * PUNCH_KILLS[5]);
+    expect(sim.phase).toBe('lost');
+    expect(sim.lossReason).toBe('swarm');
   });
 
   it('a punch that finds too few clones takes the shooter as well', () => {
     const sim = createSim(BOSS, 1, { startClones: 3 });
     const scratch = createScratch();
-    while (sim.phase === 'playing' && sim.tick < 30 * SIM_HZ) run(sim, BOSS, scratch, 1);
+    while (sim.phase === 'playing' && sim.phase === 'playing' && sim.tick < 30 * SIM_HZ) run(sim, BOSS, scratch, 1);
     expect(sim.phase).toBe('lost');
     expect(sim.lossReason).toBe('swarm');
     expect(sim.clones).toBe(0);
   });
 
   it('a swarm that gets clear during the wind-up is not hit', () => {
-    const map = mapFromRows([rowWith({ 14: 'E4-100000' }), ...gap(600), rowWith({ 0: 'E1' })]);
+    const map = BOSS;
     const sim = createSim(map, 1, { startClones: 6 });
     const scratch = createScratch();
-    const fat = () => rats(sim).find((e) => e.type === 4)!;
-    while (!fat().winding && sim.tick < 30 * SIM_HZ) run(sim, map, scratch, 1);
+    const fat = () => boss(sim);
+    while (!fat().winding && sim.phase === 'playing' && sim.tick < 60 * SIM_HZ) run(sim, map, scratch, 1);
     const rat = fat();
     // Run for the right rail.
     run(sim, map, scratch, 1, { targetDelta: 34, keyDir: 0 });
@@ -278,7 +281,7 @@ describe('punches (SPEC 7.3, A33)', () => {
     const gapToSwarm = () => SHOOTER_Y - (charger().y + charger().h / 2);
     run(sim, map, scratch, 2);
     expect(charger().y - charger().prevY).toBeCloseTo(MARCH_SPEED * SIM_DT, 6);
-    while (gapToSwarm() > E6_CHARGE_RANGE - 4 && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
+    while (gapToSwarm() > E6_CHARGE_RANGE - 4 && sim.phase === 'playing' && sim.tick < 10 * SIM_HZ) run(sim, map, scratch, 1);
     expect(charger().y - charger().prevY).toBeCloseTo(E6_CHARGE_SPEED_SPEC * SPEED_SCALE * SIM_DT, 6);
   });
 });

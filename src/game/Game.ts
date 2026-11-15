@@ -61,7 +61,7 @@ export const TRANSITIONS: Readonly<Record<GameState, readonly GameState[]>> = {
   LOADING: ['PLAYING', 'LEVEL_SELECT'],
   PLAYING: ['PAUSED', 'WIN', 'LOSE'],
   PAUSED: ['PLAYING', 'MENU'],
-  WIN: ['LEVEL_SELECT', 'MENU'],
+  WIN: ['LEVEL_SELECT', 'LOADING', 'MENU'],
   LOSE: ['LOADING', 'MENU'],
 };
 
@@ -180,6 +180,21 @@ export class Game {
     this.transition('LOADING');
   }
 
+  /** The built-in map after the one just played, or null when there is none to go on to. */
+  nextLevelId(): string | null {
+    if (this.directLevel !== null || this.custom !== null || !/^[1-9]\d*$/.test(this.levelId)) return null;
+    const next = String(Number(this.levelId) + 1);
+    return Number(next) <= BUILT_IN_LEVELS && this.maps.has(next) ? next : null;
+  }
+
+  /** After a victory: straight into the next map (A38). */
+  nextLevel(): void {
+    if (this.state !== 'WIN') return;
+    const next = this.nextLevelId();
+    if (next === null) this.continueAfterWin();
+    else this.load(next);
+  }
+
   /** After a victory: back to the map grid, where the next map is now open. */
   continueAfterWin(): void {
     if (this.state !== 'WIN') return;
@@ -249,7 +264,7 @@ export class Game {
       case 'LOSE':
         this.input.takePause();
         if (this.input.takeTap()) {
-          if (this.state === 'WIN') this.continueAfterWin();
+          if (this.state === 'WIN') this.nextLevel();
           else this.retry();
         }
         break;

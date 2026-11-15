@@ -13,7 +13,7 @@
 // | `G25`, `G25-P3`       | Gate cell with resistance 25 and an optional drop; only   |
 // |                       | in columns 1-4 and 41-44                                  |
 
-import { COLS, DROP_CODE_MAX, ENEMY_TYPE_COUNT } from '../game/constants';
+import { BUBBLE_TYPE, COLS, DROP_CODE_MAX, ENEMY_TYPE_COUNT } from '../game/constants';
 import type { CellSpec, MapData } from '../types';
 
 // --- Cell ids stored in the typed-array grid -----------------------------------
@@ -21,6 +21,8 @@ import type { CellSpec, MapData } from '../types';
 export const CELL_EMPTY = 0;
 /** Ids 1..8 are plain enemies E1..E8. */
 export const CELL_RANDOM = 9;
+/** A tank bubble with its default HP (`TB`). */
+export const CELL_BUBBLE = 10;
 /** Ids from here up index `MapData.overrides`. */
 export const CELL_OVERRIDE_BASE = 16;
 /** A grid cell is a Uint16, which bounds the number of distinct override combinations. */
@@ -39,6 +41,7 @@ const BASIC_SPECS: readonly CellSpec[] = (() => {
   for (let id = 0; id < CELL_OVERRIDE_BASE; id++) {
     if (id >= 1 && id <= ENEMY_TYPE_COUNT) specs.push(Object.freeze({ kind: 'enemy', type: id, hp: 0, drop: 0 }));
     else if (id === CELL_RANDOM) specs.push(RANDOM_SPEC);
+    else if (id === CELL_BUBBLE) specs.push(Object.freeze({ kind: 'enemy', type: BUBBLE_TYPE, hp: 0, drop: 0 }));
     else specs.push(EMPTY_SPEC);
   }
   return specs;
@@ -94,9 +97,18 @@ export function parseToken(raw: string, column: number): TokenResult {
     return { ok: true, spec: { kind: 'gate', type: 0, hp, drop } };
   }
 
+  // TB or TB-<hp>: a tank bubble.
+  const bubble = /^TB(?:-(\d+))?$/.exec(token);
+  if (bubble) {
+    if (bubble[1] === undefined) return { ok: true, spec: BASIC_SPECS[CELL_BUBBLE] };
+    const hp = parseHp(bubble[1], 'bubble HP');
+    if (typeof hp === 'string') return fail(hp);
+    return { ok: true, spec: { kind: 'enemy', type: BUBBLE_TYPE, hp, drop: 0 } };
+  }
+
   const enemy = ENEMY_TOKEN.exec(token);
   if (!enemy) {
-    return fail(`unknown token "${raw.trim()}" (expected E1-E8, E41-E44, ER, G<n>, with optional -<hp> and -P<1-${DROP_CODE_MAX}>)`);
+    return fail(`unknown token "${raw.trim()}" (expected E1-E8, E41-E44, ER, TB, G<n>, with optional -<hp> and -P<1-${DROP_CODE_MAX}>)`);
   }
   const [, base, hpText, dropText] = enemy;
 

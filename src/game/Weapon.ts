@@ -3,6 +3,7 @@ import type { SpatialHash } from './Collision';
 import {
   BIG_ENEMY_MIN_TYPE,
   DROP_TANK,
+  ENEMY_ROCKETS_SHOOTABLE,
   GATE_TYPE,
   LASER_BEAM_SECONDS,
   LASER_BIG_DMG,
@@ -93,7 +94,7 @@ function stepLaser(sim: SimState): void {
     const rockets = sim.rockets;
     for (let i = 0; i < rockets.high; i++) {
       const r = rockets.items[i];
-      if (!r.active || r.kind !== ROCKET_ENEMY || r.y >= SHOOTER_Y || Math.abs(r.x - x) >= half) continue;
+      if (!ENEMY_ROCKETS_SHOOTABLE || !r.active || r.kind !== ROCKET_ENEMY || r.y >= SHOOTER_Y || Math.abs(r.x - x) >= half) continue;
       spawnFx(sim, FX_BLAST, r.x, r.y, r.aoe, 3);
       poolFree(sim.rockets, i);
     }

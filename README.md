@@ -61,7 +61,12 @@ you place replaces what it covers. Scroll down for more rows: row 0 reaches the 
   only. **LINK** reads one from a web address. A file that is not a map gives "Wrong file".
 - **TEST** plays the map.
 - Add `?fw=<link to a .fw file>` to the game's address to play that map directly.
-- To replace built-in map 7, save your map as `public/maps/7.fw`.
+- To replace built-in map 7: load it with **Template**, change it, press **SAVE .FW** (the file is
+  called `7.fw`), put the file in `public/maps/`, then run `.deploy.ps1`. A `.fw` file wins over
+  the `.md` file of the same number. Renaming it `7.md` works too: files are read by what is in them.
+- **Tank bubble** (the round tool): a tank that comes down the lane. Shoot it open to get the tank.
+- **HP box and HP tool:** the box sets the HP of the next wall or tank bubble; pick the HP tool and
+  press on a wall, a bubble or an enemy to give it the HP in the box.
 
 A `.fw` file is plain text, one thing per line, `row,column,what`:
 

@@ -2,6 +2,7 @@ import type { Enemy, SimState } from '../types';
 import type { SpatialHash } from './Collision';
 import {
   BIG_ENEMY_MIN_TYPE,
+  BUBBLE_TYPE,
   CAT_RADIUS,
   CLONE_CAP,
   CLONE_FIRE_JITTER,
@@ -279,6 +280,30 @@ export function killInSquare(sim: SimState, x: number, y: number, half: number):
 }
 
 /**
+ * A tank bubble that reaches the swarm unopened runs over the cats in its way
+ * (A38): the ones standing within its width when it arrives, the shooter
+ * included. It does so once, then passes. The cats beside it are untouched.
+ *
+ * Returns false when the level was lost.
+ */
+function runOver(sim: SimState, e: Enemy): boolean {
+  if (e.swept >= 0) return true;
+  const reach = formationRadius(sim.clones) + CAT_RADIUS;
+  const dx = Math.max(Math.abs(e.x - sim.shooter.x) - e.w / 2, 0);
+  const dy = Math.max(Math.abs(e.y - SHOOTER_Y) - e.h / 2, 0);
+  if (dx * dx + dy * dy >= reach * reach) return true;
+  e.swept = 1;
+  const victims = catsInWay(sim, e);
+  if (victims === 0) return true;
+  const px = Math.min(Math.max(sim.shooter.x, e.x - e.w / 2), e.x + e.w / 2);
+  spawnFx(sim, FX_PUNCH, px, e.y + e.h / 2, victims, e.type);
+  const shooterHit = Math.abs(sim.shooter.x - e.x) < e.w / 2 + CAT_RADIUS;
+  // The clones in its way die first; the shooter too if it stands there, and a clone takes its place.
+  killNear(sim, px, e.y + e.h / 2, Math.min(sim.clones, victims - (shooterHit ? 1 : 0)));
+  return shooterHit ? loseCat(sim, sim.shooter.x, SHOOTER_Y) : true;
+}
+
+/**
  * Punches (SPEC 7.3, decision A33). A big rat whose body reaches the swarm
  * winds up for SMASH_INTERVAL seconds, then punches: PUNCH_KILLS cats die at
  * once. It keeps punching at that pace while the swarm is in reach. A swarm
@@ -297,6 +322,10 @@ function stepPunches(sim: SimState): boolean {
   for (let i = 0; i < sim.enemies.high; i++) {
     const e = enemies[i];
     if (!e.active || e.type < BIG_ENEMY_MIN_TYPE || e.type === GATE_TYPE) continue;
+    if (e.type === BUBBLE_TYPE) {
+      if (!runOver(sim, e)) return false;
+      continue;
+    }
     e.swing += SIM_DT;
     // Distance from the swarm's centre to the nearest point of the rat's footprint.
     const dx = Math.max(Math.abs(e.x - sx) - e.w / 2, 0);
